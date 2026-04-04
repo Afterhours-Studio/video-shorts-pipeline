@@ -94,6 +94,7 @@ voice:
 
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
       hi: "hi-IN-MadhurNeural"
     elevenlabs:
@@ -153,11 +154,12 @@ discovery:
       - "https://hnrss.org/frontpage"
       - "https://techcrunch.com/feed"
       - "https://www.theverge.com/rss/index.xml"
+      - "https://vnexpress.net/rss/khoa-hoc-cong-nghe.rss"
+      - "https://tuoitre.vn/rss/khoa-hoc.rss"
+      - "https://thanhnien.vn/rss/cong-nghe.rss"
   google_trends:
     category: "t"
-    geo: ""
-  youtube_trending:
-    category_id: "28"
+    geo: "VN"
   hacker_news:
     enabled: true
     min_score: 100

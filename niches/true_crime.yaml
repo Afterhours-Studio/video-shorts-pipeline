@@ -48,6 +48,7 @@ voice:
   energy: "low, intense, controlled tension"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-DavisNeural"
 captions:
   highlight_color: "#8B0000"
@@ -65,3 +66,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["TrueCrime", "UnresolvedMysteries", "serialpodcast"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/tin-noi-bat.rss"
+      - "https://tuoitre.vn/rss/tin-moi-nhat.rss"

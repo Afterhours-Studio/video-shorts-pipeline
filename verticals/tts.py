@@ -10,7 +10,7 @@ from pathlib import Path
 
 import requests
 
-from .config import VOICE_ID_EN, VOICE_ID_HI, get_elevenlabs_key, run_cmd
+from .config import get_elevenlabs_key, run_cmd
 from .log import log
 from .retry import with_retry
 
@@ -19,17 +19,8 @@ from .retry import with_retry
 # Edge TTS — free, cross-platform, 300+ voices
 # ─────────────────────────────────────────────────────
 
-# Default Edge TTS voices per language
-EDGE_VOICES = {
-    "en": "en-US-GuyNeural",
-    "hi": "hi-IN-MadhurNeural",
-    "es": "es-MX-JorgeNeural",
-    "pt": "pt-BR-AntonioNeural",
-    "de": "de-DE-ConradNeural",
-    "fr": "fr-FR-HenriNeural",
-    "ja": "ja-JP-KeitaNeural",
-    "ko": "ko-KR-InJoonNeural",
-}
+# Default Edge TTS voice — Vietnamese only (Verticals v4)
+EDGE_VOICE_DEFAULT = "vi-VN-NamMinhNeural"
 
 
 async def _edge_tts_generate(text: str, voice: str, output_path: Path):
@@ -39,14 +30,14 @@ async def _edge_tts_generate(text: str, voice: str, output_path: Path):
     await communicate.save(str(output_path))
 
 
-def _generate_edge_tts(script: str, out_dir: Path, lang: str, voice_override: str = "") -> Path:
+def _generate_edge_tts(script: str, out_dir: Path, voice_override: str = "") -> Path:
     """Generate voiceover via Edge TTS (free Microsoft voices)."""
     import asyncio
 
-    voice = voice_override or EDGE_VOICES.get(lang[:2], EDGE_VOICES["en"])
-    out_path = out_dir / f"voiceover_{lang}.mp3"
+    voice = voice_override or EDGE_VOICE_DEFAULT
+    out_path = out_dir / "voiceover_vi.mp3"
 
-    log(f"Generating {lang} voiceover via Edge TTS (voice: {voice})...")
+    log(f"Generating vi voiceover via Edge TTS (voice: {voice})...")
 
     try:
         # Handle event loop — works whether called from sync or async context
@@ -99,7 +90,7 @@ def _call_elevenlabs(script: str, voice_id: str, api_key: str, settings: dict | 
 
 
 def _generate_elevenlabs(
-    script: str, out_dir: Path, lang: str,
+    script: str, out_dir: Path,
     voice_id: str = "", settings: dict | None = None
 ) -> Path:
     """Generate voiceover via ElevenLabs."""
@@ -107,10 +98,12 @@ def _generate_elevenlabs(
     if not api_key:
         raise RuntimeError("ELEVENLABS_API_KEY not set")
 
-    vid = voice_id or (VOICE_ID_HI if lang == "hi" else VOICE_ID_EN)
-    out_path = out_dir / f"voiceover_{lang}.mp3"
+    vid = voice_id
+    if not vid:
+        raise RuntimeError("ElevenLabs voice_id required (no language-based fallback in v4)")
+    out_path = out_dir / "voiceover_vi.mp3"
 
-    log(f"Generating {lang} voiceover via ElevenLabs (voice: {vid})...")
+    log(f"Generating vi voiceover via ElevenLabs (voice: {vid})...")
     audio_bytes = _call_elevenlabs(script, vid, api_key, settings)
     out_path.write_bytes(audio_bytes)
     log(f"ElevenLabs voiceover saved: {out_path.name}")
@@ -181,7 +174,7 @@ def get_tts_provider(name: str | None = None) -> str:
 def generate_voiceover(
     script: str,
     out_dir: Path,
-    lang: str = "en",
+    lang: str = "vi",
     provider: str | None = None,
     voice_config: dict | None = None,
 ) -> Path:
@@ -190,7 +183,7 @@ def generate_voiceover(
     Args:
         script: The voiceover text.
         out_dir: Directory to save the audio file.
-        lang: Language code (en, hi, es, etc.).
+        lang: Ignored in v4 (always Vietnamese).
         provider: TTS provider name (edge, elevenlabs, say).
         voice_config: Optional voice config from niche profile.
 
@@ -203,7 +196,7 @@ def generate_voiceover(
     if provider == "edge":
         voice_override = voice_config.get("voice_id", "")
         try:
-            return _generate_edge_tts(script, out_dir, lang, voice_override)
+            return _generate_edge_tts(script, out_dir, voice_override)
         except Exception as e:
             log(f"Edge TTS failed: {e}")
             # Fall through to next provider
@@ -217,7 +210,7 @@ def generate_voiceover(
     if provider == "elevenlabs":
         try:
             return _generate_elevenlabs(
-                script, out_dir, lang,
+                script, out_dir,
                 voice_id=voice_config.get("voice_id", ""),
                 settings=voice_config.get("settings"),
             )

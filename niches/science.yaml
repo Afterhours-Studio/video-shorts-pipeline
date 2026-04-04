@@ -48,6 +48,7 @@ voice:
   energy: "curious, building excitement"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
 captions:
   highlight_color: "#22D1EE"
@@ -65,3 +66,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["science", "space", "EverythingScience", "Futurology"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/khoa-hoc.rss"
+      - "https://tuoitre.vn/rss/khoa-hoc.rss"

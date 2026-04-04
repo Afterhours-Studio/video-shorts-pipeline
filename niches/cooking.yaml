@@ -51,6 +51,7 @@ voice:
   energy: "warm, enthusiastic but not loud"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-JennyNeural"
 captions:
   highlight_color: "#FF6B35"
@@ -68,3 +69,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["food", "recipes", "cooking", "MealPrepSunday"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/tin-noi-bat.rss"
+      - "https://tuoitre.vn/rss/tin-moi-nhat.rss"

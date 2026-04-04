@@ -18,8 +18,9 @@ def generate_draft(
     news: str,
     channel_context: str = "",
     niche: str = "general",
-    platform: str = "shorts",
+    platform: str = "tiktok",
     provider: str | None = None,
+    lang: str = "vi",
 ) -> dict:
     """Research topic + generate niche-aware draft via LLM.
 
@@ -27,8 +28,9 @@ def generate_draft(
         news: Topic or news headline.
         channel_context: Optional channel context.
         niche: Niche profile name (loads from niches/<n>.yaml).
-        platform: Target platform (shorts, reels, tiktok).
-        provider: LLM provider (claude, gemini, openai, ollama).
+        platform: Target platform (tiktok).
+        provider: LLM provider (gemini, ollama).
+        lang: Target language (vi).
     """
     # Load niche intelligence
     profile = load_niche(niche)
@@ -39,8 +41,8 @@ def generate_draft(
     research = research_topic(news)
 
     # Platform config
-    platform_key = platform if platform != "all" else "shorts"
-    platform_cfg = PLATFORM_CONFIGS.get(platform_key, PLATFORM_CONFIGS["shorts"])
+    platform_key = platform if platform != "all" else "tiktok"
+    platform_cfg = PLATFORM_CONFIGS.get(platform_key, PLATFORM_CONFIGS["tiktok"])
     max_words = platform_cfg["max_script_words"]
     platform_label = platform_cfg["label"]
 
@@ -78,7 +80,10 @@ def generate_draft(
 
     channel_note = f"\nChannel context: {channel_context}" if channel_context else ""
 
-    prompt = f"""You are writing a {platform_label} script ({max_words} words max, ~60-90 seconds spoken).{channel_note}
+    # Hardcoded to Vietnamese for v4
+    lang_full = "Vietnamese"
+
+    prompt = f"""You are writing a {platform_label} script in {lang_full} ({max_words} words max, ~60-90 seconds spoken).{channel_note}
 
 {script_context}
 
@@ -98,16 +103,17 @@ RULES:
 - Use one of the CTA OPTIONS at the end
 - Never use any of the NEVER USE phrases
 - B-roll prompts must follow the visual guidance (style, mood, preferred subjects)
+- CRITICAL: All fields MUST be in {lang_full} (script, title, description, tags, captions, thumbnail_prompt).
+- Escape all double-quotes within string values (e.g., use \\\" instead of \").
 
 Output JSON exactly:
 {{
   "script": "...",
   "broll_prompts": ["prompt for frame 1", "prompt for frame 2", "prompt for frame 3"],
-  "youtube_title": "...",
-  "youtube_description": "...",
-  "youtube_tags": "tag1,tag2,tag3",
-  "instagram_caption": "...",
-  "tiktok_caption": "...",
+  "title": "...",
+  "description": "...",
+  "hashtags": "tag1,tag2,tag3",
+  "caption": "...",
   "thumbnail_prompt": "..."
 }}"""
 
@@ -118,20 +124,84 @@ Output JSON exactly:
         raw = raw.split("```")[1]
         if raw.startswith("json"):
             raw = raw[4:]
-        raw = raw.strip()
-
-    # Handle case where LLM wraps in additional text
+        # Handle case where LLM wraps in additional text
     start = raw.find("{")
     end = raw.rfind("}") + 1
+    
     if start >= 0 and end > start:
-        raw = raw[start:end]
+        json_body = raw[start:end]
+    elif start >= 0:
+        # Found opening { but no closing } — response was likely truncated
+        json_body = raw[start:] + "}"
+        log("Warning: JSON response appears truncated, appending closing brace")
+    else:
+        # No braces at all — wrap entire response
+        if '"script":' in raw:
+            json_body = "{" + raw + "}"
+        else:
+            json_body = raw
 
-    draft = json.loads(raw)
+    # Fix doubled braces — Gemini sometimes echoes {{ / }} from prompt template
+    while json_body.startswith("{{"):
+        json_body = json_body[1:]
+    while json_body.endswith("}}"):
+        json_body = json_body[:-1]
+
+    try:
+        draft = json.loads(json_body)
+    except json.JSONDecodeError as e:
+        log(f"JSON parse error: {e}. Attempting recovery...")
+        import re
+
+        # Tier 1: Strip trailing commas before } or ] and retry
+        fixed = re.sub(r',\s*([}\]])', r'\1', json_body)
+        fixed = fixed.replace('\n', ' ').replace('\r', '')
+        try:
+            draft = json.loads(fixed)
+            log("Recovery successful (Tier 1: trailing commas / whitespace)")
+        except json.JSONDecodeError:
+            pass
+
+        if not isinstance(locals().get('draft'), dict):
+            # Tier 2: Extract fields individually via robust regex
+            log("Manual field extraction (Tier 2)...")
+            draft = {}
+
+            # Extract string fields — match "key": "value" allowing escaped quotes and newlines
+            for field in ["script", "title", "description",
+                          "hashtags", "caption",
+                          "thumbnail_prompt"]:
+                m = re.search(
+                    rf'"{field}"\s*:\s*"((?:[^"\\]|\\.)*)"\s*[,}}\]]',
+                    json_body, re.DOTALL,
+                )
+                if m:
+                    draft[field] = m.group(1).replace('\\"', '"').replace('\\n', '\n')
+
+            # Extract broll_prompts array
+            arr_match = re.search(
+                r'"broll_prompts"\s*:\s*\[(.*?)\]', json_body, re.DOTALL
+            )
+            if arr_match:
+                prompts = re.findall(r'"((?:[^"\\]|\\.)*)"', arr_match.group(1))
+                draft["broll_prompts"] = [p.replace('\\"', '"') for p in prompts[:3]]
+
+        if not isinstance(locals().get('draft'), dict) or not draft.get("script"):
+            # Tier 3: Last resort — use raw LLM output as script
+            log("Last resort fallback (Tier 3): using raw output as script")
+            if not isinstance(locals().get('draft'), dict):
+                draft = {}
+            if not draft.get("script"):
+                draft["script"] = raw[:500]
+            if not draft.get("title"):
+                draft["title"] = news
+            if not draft.get("broll_prompts"):
+                draft["broll_prompts"] = ["Cinematic tech landscape"] * 3
 
     # Validate and sanitize LLM output fields
     expected_str_fields = [
-        "script", "youtube_title", "youtube_description",
-        "youtube_tags", "instagram_caption", "tiktok_caption",
+        "script", "title", "description",
+        "hashtags", "caption",
         "thumbnail_prompt",
     ]
     for field in expected_str_fields:

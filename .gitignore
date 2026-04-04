@@ -24,6 +24,10 @@ build/
 venv/
 .pytest_cache/
 
+# Claude / Agent config (local)
+.agent/
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db

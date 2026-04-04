@@ -51,6 +51,7 @@ voice:
   energy: "warm, reflective, with moments of excitement"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
 captions:
   highlight_color: "#E8A87C"
@@ -68,3 +69,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["travel", "solotravel", "backpacking", "TravelHacks"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/tin-noi-bat.rss"
+      - "https://tuoitre.vn/rss/tin-moi-nhat.rss"

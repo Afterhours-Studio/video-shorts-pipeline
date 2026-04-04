@@ -156,8 +156,11 @@ def get_visual_subjects(profile: dict) -> dict:
     }
 
 
-def get_voice_config(profile: dict, provider: str = "edge_tts", lang: str = "en") -> dict:
-    """Get voice configuration for the specified provider and language."""
+def get_voice_config(profile: dict, provider: str = "edge_tts", lang: str = "vi") -> dict:
+    """Get voice configuration for the specified provider.
+
+    In Verticals v4, lang is always Vietnamese and ignored.
+    """
     voice = profile.get("voice", {})
     suggested = voice.get("suggested_voices", {})
 
@@ -169,7 +172,8 @@ def get_voice_config(profile: dict, provider: str = "edge_tts", lang: str = "en"
 
     provider_voices = suggested.get(provider, {})
     if isinstance(provider_voices, dict):
-        config["voice_id"] = provider_voices.get(lang, provider_voices.get("en", ""))
+        # Always look up "vi" first, then fall back to any available voice
+        config["voice_id"] = provider_voices.get("vi", provider_voices.get("en", ""))
         # ElevenLabs specific settings
         if provider == "elevenlabs":
             config["voice_id"] = provider_voices.get("voice_id", "")

@@ -56,6 +56,7 @@ voice:
   energy: "calm authority, measured confidence"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
 captions:
   highlight_color: "#00C853"
@@ -76,3 +77,6 @@ discovery:
   rss:
     feeds:
       - "https://feeds.bloomberg.com/markets/news.rss"
+      - "https://vnexpress.net/rss/kinh-doanh.rss"
+      - "https://tuoitre.vn/rss/kinh-doanh.rss"
+      - "https://thanhnien.vn/rss/tai-chinh-kinh-doanh.rss"

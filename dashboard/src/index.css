@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Outfit", ui-sans-serif, system-ui, sans-serif;
+  --radius-3xl: 32px;
+  --radius-2xl: 24px;
+  --color-orange-500: #f97316;
+  --color-orange-400: #fb923c;
+  --color-orange-600: #ea580c;
+  
+  /* Soft Metallic Palette - Adjusted for lightness */
+  --color-zinc-950: #111113;
+  --color-zinc-900: #1b1b1f;
+  --color-zinc-800: #27272a;
+
+  @keyframes reveal {
+    0% { opacity: 0; transform: translateY(8px); }
+    100% { opacity: 1; transform: translateY(0); }
+  }
+
+  --animate-reveal: reveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@layer base {
+  body {
+    @apply antialiased selection:bg-orange-500/30 selection:text-orange-200 bg-[#0c0c0e] text-zinc-100;
+  }
+}
+
+@layer utilities {
+  .floating-shadow {
+    box-shadow: 0 20px 50px -12px rgba(0, 0, 0, 0.7);
+  }
+  
+  .glass-surface {
+    @apply bg-zinc-900/40 backdrop-blur-2xl border border-white/[0.03];
+  }
+}
+
+.reveal-stagger-1 { animation-delay: 100ms; }
+.reveal-stagger-2 { animation-delay: 200ms; }
+.reveal-stagger-3 { animation-delay: 300ms; }
+.reveal-stagger-4 { animation-delay: 400ms; }
+

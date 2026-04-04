@@ -77,6 +77,7 @@ voice:
 
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-ChristopherNeural"
       hi: "hi-IN-MadhurNeural"
     elevenlabs:
@@ -123,8 +124,8 @@ discovery:
     feeds:
       - "https://kotaku.com/rss"
       - "https://www.polygon.com/rss/index.xml"
+      - "https://vnexpress.net/rss/giai-tri.rss"
+      - "https://tuoitre.vn/rss/giai-tri.rss"
   google_trends:
     category: "games"
-    geo: ""
-  youtube_trending:
-    category_id: "20"
+    geo: "VN"

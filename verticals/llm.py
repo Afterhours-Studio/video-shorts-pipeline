@@ -1,19 +1,13 @@
 """Multi-provider LLM abstraction.
 
-Supports: claude (Anthropic), gemini (Google), openai (OpenAI), ollama (local).
+Supports: gemini (Google), ollama (local).
 Provider selection: --provider flag or LLM_PROVIDER env var or config.json.
 """
 
 import json
 import os
 
-from .config import (
-    get_anthropic_client,
-    get_anthropic_key,
-    get_claude_backend,
-    get_gemini_key,
-    call_claude_cli,
-)
+from .config import get_gemini_key
 from .log import log
 from .retry import with_retry
 
@@ -37,25 +31,15 @@ def get_provider(name: str | None = None) -> str:
         return from_cfg
 
     # Auto-detect: try providers in preference order
-    if get_anthropic_key():
-        return "claude"
     if get_gemini_key():
         return "gemini"
-    if os.environ.get("OPENAI_API_KEY") or cfg.get("OPENAI_API_KEY"):
-        return "openai"
     if _ollama_available():
         return "ollama"
 
-    # Last resort: Claude CLI
-    from .config import has_claude_cli
-    if has_claude_cli():
-        return "claude_cli"
-
     raise RuntimeError(
         "No LLM provider found. Set one of:\n"
-        "  ANTHROPIC_API_KEY, GEMINI_API_KEY, OPENAI_API_KEY\n"
-        "  Or install Ollama with a model pulled\n"
-        "  Or install Claude Code with a Max subscription"
+        "  GEMINI_API_KEY\n"
+        "  Or install Ollama with a model pulled"
     )
 
 
@@ -70,12 +54,12 @@ def _ollama_available() -> bool:
 
 
 @with_retry(max_retries=2, base_delay=3.0)
-def call_llm(prompt: str, provider: str | None = None, max_tokens: int = 1500) -> str:
+def call_llm(prompt: str, provider: str | None = None, max_tokens: int = 4096) -> str:
     """Call any supported LLM provider with the given prompt.
 
     Args:
         prompt: The full prompt text.
-        provider: Provider name (claude, gemini, openai, ollama, claude_cli).
+        provider: Provider name (gemini, ollama).
         max_tokens: Maximum response tokens.
 
     Returns:
@@ -84,33 +68,12 @@ def call_llm(prompt: str, provider: str | None = None, max_tokens: int = 1500) -
     provider = get_provider(provider)
     log(f"Calling LLM via {provider}...")
 
-    if provider == "claude":
-        return _call_claude(prompt, max_tokens)
-    elif provider == "claude_cli":
-        return call_claude_cli(prompt, max_tokens=max_tokens)
-    elif provider == "gemini":
+    if provider == "gemini":
         return _call_gemini(prompt, max_tokens)
-    elif provider == "openai":
-        return _call_openai(prompt, max_tokens)
     elif provider == "ollama":
         return _call_ollama(prompt)
     else:
-        raise ValueError(f"Unknown LLM provider: {provider}")
-
-
-def _call_claude(prompt: str, max_tokens: int) -> str:
-    """Call Claude via Anthropic API."""
-    backend = get_claude_backend()
-    if backend == "cli":
-        return call_claude_cli(prompt, max_tokens=max_tokens)
-
-    client = get_anthropic_client()
-    msg = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=max_tokens,
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return msg.content[0].text.strip()
+        raise ValueError(f"Unknown LLM provider: {provider}. Supported: gemini, ollama")
 
 
 def _call_gemini(prompt: str, max_tokens: int) -> str:
@@ -123,13 +86,14 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta"
-        "/models/gemini-2.0-flash:generateContent"
+        "/models/gemini-2.5-flash:generateContent"
     )
     body = {
         "contents": [{"parts": [{"text": prompt}]}],
         "generationConfig": {
             "maxOutputTokens": max_tokens,
             "temperature": 0.7,
+            "responseMimeType": "application/json",
         },
     }
     r = requests.post(
@@ -141,40 +105,31 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
 
     data = r.json()
     parts = data.get("candidates", [{}])[0].get("content", {}).get("parts", [])
-    text = " ".join(p.get("text", "") for p in parts).strip()
+
+    # With responseMimeType="application/json", text may already be a parsed object
+    raw_parts = []
+    for p in parts:
+        val = p.get("text", "")
+        if isinstance(val, dict):
+            raw_parts.append(json.dumps(val))
+        elif isinstance(val, str):
+            raw_parts.append(val)
+        else:
+            raw_parts.append(str(val))
+    text = " ".join(raw_parts).strip()
     if not text:
         raise RuntimeError("Empty response from Gemini")
+
+    # Strip markdown code fences that Gemini sometimes wraps around JSON
+    if text.startswith("```"):
+        lines = text.split("\n")
+        if lines[-1].strip() == "```":
+            lines = lines[1:-1]
+        else:
+            lines = lines[1:]
+        text = "\n".join(lines).strip()
+
     return text
-
-
-def _call_openai(prompt: str, max_tokens: int) -> str:
-    """Call OpenAI GPT via API."""
-    import requests
-
-    from .config import load_config
-    api_key = os.environ.get("OPENAI_API_KEY") or load_config().get("OPENAI_API_KEY", "")
-    if not api_key:
-        raise RuntimeError("OPENAI_API_KEY not set")
-
-    r = requests.post(
-        "https://api.openai.com/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": "gpt-4o-mini",
-            "max_tokens": max_tokens,
-            "temperature": 0.7,
-            "messages": [{"role": "user", "content": prompt}],
-        },
-        timeout=60,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"OpenAI API {r.status_code}: {r.text[:300]}")
-
-    data = r.json()
-    return data["choices"][0]["message"]["content"].strip()
 
 
 def _call_ollama(prompt: str) -> str:

@@ -52,6 +52,7 @@ voice:
   energy: "high, coaching energy, encouraging"
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-ChristopherNeural"
 captions:
   highlight_color: "#FF6B35"
@@ -69,3 +70,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["fitness", "bodyweightfitness", "nutrition", "running", "loseit"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/tin-noi-bat.rss"
+      - "https://tuoitre.vn/rss/tin-moi-nhat.rss"

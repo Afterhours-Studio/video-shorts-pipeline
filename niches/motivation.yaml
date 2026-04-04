@@ -28,6 +28,7 @@ visuals:
 voice:
   suggested_voices:
     edge_tts:
+      vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
 captions:
   highlight_color: "#FFFF00"
@@ -43,3 +44,7 @@ thumbnail:
 discovery:
   reddit:
     subreddits: ["motivation"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/tin-noi-bat.rss"
+      - "https://tuoitre.vn/rss/tin-moi-nhat.rss"

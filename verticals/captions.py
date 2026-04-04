@@ -57,6 +57,45 @@ def _group_words(words: list[dict], group_size: int = 4) -> list[list[dict]]:
     return groups
 
 
+# Punctuation that signals end of a phrase/sentence
+_PHRASE_BREAKS = set(".,!?;:…")
+
+
+def _group_words_smart(words: list[dict], max_words: int = 8) -> list[list[dict]]:
+    """Group words by punctuation boundaries (smart split for Vietnamese).
+
+    Splits at sentence-ending punctuation (. ! ? ; :) or when max_words is reached.
+    Produces more natural subtitle lines that don't cut mid-phrase.
+    """
+    if not words:
+        return []
+
+    groups = []
+    current: list[dict] = []
+
+    for w in words:
+        current.append(w)
+        text = w["word"].rstrip()
+
+        # Check if word ends with phrase-breaking punctuation
+        ends_phrase = text and text[-1] in _PHRASE_BREAKS
+        at_limit = len(current) >= max_words
+
+        if ends_phrase or at_limit:
+            groups.append(current)
+            current = []
+
+    # Don't leave orphan words — append remaining
+    if current:
+        if groups and len(current) <= 2:
+            # Merge very short tail into last group
+            groups[-1].extend(current)
+        else:
+            groups.append(current)
+
+    return groups
+
+
 def _format_ass_time(seconds: float) -> str:
     """Format seconds to ASS timestamp: H:MM:SS.cc (centiseconds)."""
     h = int(seconds // 3600)
@@ -66,7 +105,7 @@ def _format_ass_time(seconds: float) -> str:
     return f"{h}:{m:02d}:{s:02d}.{cs:02d}"
 
 
-def _generate_ass(words: list[dict], output_path: Path, video_width: int = 1080, video_height: int = 1920, highlight_color: str = "#FFFF00", group_size: int = 4):
+def _generate_ass(words: list[dict], output_path: Path, video_width: int = 1080, video_height: int = 1920, highlight_color: str = "#FFFF00", groups: list[list[dict]] | None = None, group_size: int = 4):
     """Generate ASS subtitle file with word-by-word color highlighting.
 
     White text for inactive words, yellow for current word.
@@ -96,7 +135,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     else:
         ass_highlight = "&H0000FFFF&"  # fallback yellow
 
-    groups = _group_words(words, group_size=group_size)
+    if groups is None:
+        groups = _group_words(words, group_size=group_size)
     events = []
 
     for group in groups:
@@ -129,9 +169,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
     return output_path
 
 
-def _generate_srt(words: list[dict], output_path: Path, group_size: int = 4) -> Path:
+def _generate_srt(words: list[dict], output_path: Path, groups: list[list[dict]] | None = None, group_size: int = 4) -> Path:
     """Generate standard SRT file from word timestamps."""
-    groups = _group_words(words, group_size=group_size)
+    if groups is None:
+        groups = _group_words(words, group_size=group_size)
     lines = []
 
     for i, group in enumerate(groups, 1):
@@ -165,8 +206,14 @@ def generate_captions(
     lang: str = "en",
     highlight_color: str = "#FFFF00",
     words_per_group: int = 4,
+    split_mode: str = "smart",
 ) -> dict:
     """Generate captions: ASS (for burn-in) + SRT (for YouTube upload).
+
+    Args:
+        split_mode: "smart" splits by punctuation (natural sentences),
+                    "fixed" splits every N words.
+        words_per_group: Max words per subtitle group (used by both modes).
 
     Returns dict with keys: srt_path, ass_path, words (for music ducking).
     """
@@ -196,14 +243,22 @@ def generate_captions(
             log(f"Whisper CLI fallback failed: {e}")
         return result
 
+    # Group words based on split mode
+    if split_mode == "smart":
+        groups = _group_words_smart(words, max_words=words_per_group)
+        log(f"Smart split: {len(groups)} subtitle groups (max {words_per_group} words)")
+    else:
+        groups = _group_words(words, group_size=words_per_group)
+        log(f"Fixed split: {len(groups)} subtitle groups ({words_per_group} words each)")
+
     # Generate SRT
     srt_path = work_dir / f"captions_{lang}.srt"
-    _generate_srt(words, srt_path, group_size=words_per_group)
+    _generate_srt(words, srt_path, groups=groups)
     result["srt_path"] = str(srt_path)
 
     # Generate ASS for burn-in (niche-aware highlight color)
     ass_path = work_dir / f"captions_{lang}.ass"
-    _generate_ass(words, ass_path, highlight_color=highlight_color, group_size=words_per_group)
+    _generate_ass(words, ass_path, highlight_color=highlight_color, groups=groups)
     result["ass_path"] = str(ass_path)
 
     return result

@@ -1,8 +1,9 @@
-"""TopicEngine — orchestrates multi-source discovery + Claude auto-pick."""
+"""TopicEngine — orchestrates multi-source discovery + LLM auto-pick."""
 
 import concurrent.futures
 
-from ..config import load_config, get_anthropic_client, get_claude_backend, call_claude_cli, NICHE_TO_SUBREDDITS
+from ..config import load_config, NICHE_TO_SUBREDDITS
+from ..llm import call_llm
 from ..log import log
 from .base import TopicCandidate
 
@@ -43,14 +44,8 @@ class TopicEngine:
             pass
 
         try:
-            from .twitter import TwitterSource
-            source_map["twitter"] = TwitterSource
-        except ImportError:
-            pass
-
-        try:
-            from .tiktok import TikTokSource
-            source_map["tiktok"] = TikTokSource
+            from .gnews import GNewsSource
+            source_map["gnews"] = GNewsSource
         except ImportError:
             pass
 
@@ -67,7 +62,7 @@ class TopicEngine:
                     src_cfg.setdefault("niche", self._niche)
 
             # NewsAPI enabled if key is present (checked by is_available); others default on/off
-            default_enabled = name in ("reddit", "rss", "google_trends", "newsapi")
+            default_enabled = name in ("reddit", "rss", "google_trends", "newsapi", "gnews")
             if src_cfg.get("enabled", default_enabled):
                 try:
                     self._sources.append(cls(src_cfg))
@@ -106,27 +101,17 @@ class TopicEngine:
         return unique[:limit]
 
     def auto_pick(self, candidates: list[TopicCandidate]) -> str:
-        """Use Claude to pick the best topic for a YouTube Short."""
+        """Use LLM to pick the best topic for a Vietnamese TikTok Short."""
         topics_text = "\n".join(
             f"{i+1}. [{t.source}] {t.title} (score: {t.trending_score:.2f})"
             for i, t in enumerate(candidates[:20])
         )
 
-        prompt = f"""Pick the single best topic from this list for a viral YouTube Short (60-90 sec).
-Consider: visual potential, broad appeal, timeliness, controversy/surprise factor.
+        prompt = f"""Pick the single best topic from this list for a viral Vietnamese TikTok Short (60-90 sec).
+Consider: visual potential, broad appeal to Vietnamese audiences, timeliness, controversy/surprise factor.
 
 {topics_text}
 
 Reply with ONLY the topic title text, nothing else."""
 
-        backend = get_claude_backend()
-        if backend == "api":
-            client = get_anthropic_client()
-            msg = client.messages.create(
-                model="claude-sonnet-4-6",
-                max_tokens=200,
-                messages=[{"role": "user", "content": prompt}],
-            )
-            return msg.content[0].text.strip()
-        else:
-            return call_claude_cli(prompt, max_tokens=200)
+        return call_llm(prompt, max_tokens=200)

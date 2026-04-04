@@ -19,7 +19,7 @@ def _generate_thumb_image(prompt: str, output_path: Path, api_key: str):
     """Generate a 16:9 thumbnail via Gemini native image generation."""
     url = (
         "https://generativelanguage.googleapis.com/v1beta"
-        "/models/gemini-2.0-flash-exp-image-generation:generateContent"
+        "/models/gemini-2.5-flash-image:generateContent"
     )
     body = {
         "contents": [{"parts": [{"text": f"Generate a 16:9 landscape image: {prompt}"}]}],
@@ -121,7 +121,7 @@ def generate_thumbnail(draft: dict, out_dir: Path) -> Path:
     """
     api_key = get_gemini_key()
     prompt = draft.get("thumbnail_prompt", "Cinematic YouTube thumbnail")
-    title = draft.get("youtube_title", draft.get("news", ""))
+    title = draft.get("title", draft.get("news", ""))
     job_id = draft.get("job_id", "unknown")
 
     raw_path = out_dir / f"thumb_raw_{job_id}.png"

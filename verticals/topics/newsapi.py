@@ -12,14 +12,14 @@ from .base import TopicCandidate, TopicSource
 
 # Niche → NewsAPI query string mapping
 _NICHE_QUERIES: dict[str, str] = {
-    "gaming":  "gaming video games",
-    "finance": "finance markets investing",
-    "fitness": "fitness health workout",
-    "tech":    "technology AI startups",
-    "beauty":  "beauty skincare makeup",
-    "food":    "food recipes cooking",
-    "travel":  "travel destinations",
-    "general": "trending",
+    "gaming":  "game esports Liên Quân PUBG",
+    "finance": "chứng khoán crypto kinh tế tài chính",
+    "fitness": "sức khỏe tập gym workout Việt Nam",
+    "tech":    "công nghệ AI startup Việt Nam",
+    "beauty":  "làm đẹp skincare mỹ phẩm Việt Nam",
+    "food":    "ẩm thực món ăn nấu ăn Việt Nam",
+    "travel":  "du lịch điểm đến Việt Nam",
+    "general": "xu hướng Việt Nam",
 }
 
 
@@ -52,12 +52,12 @@ class NewsAPISource(TopicSource):
                 "https://newsapi.org/v2/top-headlines",
                 params={
                     "q": query,
-                    "language": "en",
+                    "language": "vi",
                     "pageSize": min(limit, 20),  # NewsAPI max per request
                 },
                 # API key sent via header, not URL param, to avoid leaking in logs
                 headers={
-                    "User-Agent": "verticals/3.0",
+                    "User-Agent": "verticals/4.0",
                     "X-Api-Key": self._api_key,
                 },
                 timeout=10,

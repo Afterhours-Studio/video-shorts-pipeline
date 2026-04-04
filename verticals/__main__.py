@@ -1,6 +1,7 @@
 """CLI entry point — python -m verticals."""
 
 import argparse
+import json as _json
 import sys
 import time
 from pathlib import Path
@@ -19,7 +20,7 @@ def cmd_draft(args):
     job_id = str(int(time.time()))
 
     niche = getattr(args, "niche", "general") or "general"
-    platform = getattr(args, "platform", "shorts") or "shorts"
+    platform = getattr(args, "platform", "tiktok") or "tiktok"
     provider = getattr(args, "provider", None)
 
     print(f"\n  Drafting: {args.news} [niche: {niche}, platform: {platform}]\n")
@@ -29,6 +30,7 @@ def cmd_draft(args):
         niche=niche,
         platform=platform,
         provider=provider,
+        lang="vi",
     )
     draft["job_id"] = job_id
 
@@ -40,7 +42,7 @@ def cmd_draft(args):
 
     print(f"\n  Draft saved: {out_path}")
     print(f"\n  Script:\n{draft['script']}")
-    print(f"\n  Title: {draft.get('youtube_title', '')}")
+    print(f"\n  Title: {draft.get('title', '')}")
     print(f"\n  B-roll prompts:")
     for i, p in enumerate(draft.get("broll_prompts", [])):
         print(f"  {i+1}. {p}")
@@ -62,7 +64,7 @@ def cmd_produce(args):
     draft_path = Path(args.draft)
     draft = json.loads(draft_path.read_text())
     job_id = draft["job_id"]
-    lang = args.lang
+    lang = "vi"
     state = PipelineState(draft)
 
     # Load niche profile for voice/caption/music config
@@ -75,9 +77,7 @@ def cmd_produce(args):
 
     force = getattr(args, "force", False)
     tts_provider = getattr(args, "voice", None)
-    script = getattr(args, "script", None) or (
-        draft.get("script_hi") if lang == "hi" else draft.get("script")
-    )
+    script = getattr(args, "script", None) or draft.get("script")
 
     print(f"\n  Producing {lang.upper()} video for job {job_id} [niche: {niche_name}]")
 
@@ -94,10 +94,9 @@ def cmd_produce(args):
         voice_config = get_voice_config(
             profile,
             provider=tts_provider or "edge_tts",
-            lang=lang,
         )
         vo_path = generate_voiceover(
-            script, work_dir, lang,
+            script, work_dir,
             provider=tts_provider,
             voice_config=voice_config,
         )
@@ -108,11 +107,14 @@ def cmd_produce(args):
 
     # Whisper + Captions (niche-aware styling)
     caption_config = get_caption_config(profile)
+    from .config import load_config as _load_cfg
+    _cfg = _load_cfg()
     if force or not state.is_done("captions"):
         captions_result = generate_captions(
             vo_path, work_dir, lang,
             highlight_color=caption_config.get("highlight_color", "#FFFF00"),
-            words_per_group=caption_config.get("words_per_group", 4),
+            words_per_group=int(_cfg.get("CAPTION_MAX_WORDS", caption_config.get("words_per_group", 8))),
+            split_mode=_cfg.get("CAPTION_SPLIT_MODE", "smart"),
         )
         state.complete_stage("captions", {
             "srt_path": str(captions_result.get("srt_path", "")),
@@ -151,7 +153,6 @@ def cmd_produce(args):
             voiceover=vo_path,
             out_dir=work_dir,
             job_id=job_id,
-            lang=lang,
             ass_path=captions_result.get("ass_path"),
             music_path=music_result.get("track_path"),
             duck_filter=music_result.get("duck_filter"),
@@ -171,79 +172,57 @@ def cmd_produce(args):
     draft[f"video_{lang}"] = str(video_path)
     state.save(draft_path)
 
+    # Register in shared DB so the dashboard sees CLI-produced videos
+    try:
+        from .db import register_video
+        register_video(draft, video_path)
+        log("Registered video in dashboard DB")
+    except Exception as e:
+        log(f"DB registration skipped: {e}")
+
     print(f"\n  Video: {video_path}")
     return video_path
 
 
-def cmd_upload(args):
-    from .upload import upload_to_youtube
-    from .thumbnail import generate_thumbnail
-    from .state import PipelineState
-    import json
-
-    draft_path = Path(args.draft)
-    draft = json.loads(draft_path.read_text())
-    lang = args.lang
-    state = PipelineState(draft)
-    force = getattr(args, "force", False)
-
-    video_path = Path(draft.get(f"video_{lang}", ""))
-    srt_path_str = draft.get(f"srt_{lang}")
-    srt_path = Path(srt_path_str) if srt_path_str else None
-
-    if not video_path.exists():
-        print(f"  No produced video found for lang={lang}. Run produce first.")
-        sys.exit(1)
-
-    # Thumbnail
-    thumb_path = None
-    if force or not state.is_done("thumbnail"):
-        try:
-            thumb_path = generate_thumbnail(draft, MEDIA_DIR)
-            state.complete_stage("thumbnail", {"path": str(thumb_path)})
-        except Exception as e:
-            log(f"Thumbnail generation failed: {e} — uploading without thumbnail")
-    else:
-        thumb_p = state.get_artifact("thumbnail", "path", "")
-        if thumb_p and Path(thumb_p).exists():
-            thumb_path = Path(thumb_p)
-
-    # Upload
-    if force or not state.is_done("upload"):
-        url = upload_to_youtube(video_path, draft, srt_path, lang, thumb_path)
-        state.complete_stage("upload", {"url": url})
-    else:
-        url = state.get_artifact("upload", "url", "")
-        log(f"Skipping upload (already done): {url}")
-
-    draft[f"youtube_url_{lang}"] = url
-    state.save(draft_path)
-    print(f"\n  Live: {url}")
-    return url
-
-
 def cmd_run(args):
+    fmt = getattr(args, "format", "text")
+    quiet = getattr(args, "quiet", False)
+    stage_timings = {}
+
+    t0 = time.time()
     draft_path = cmd_draft(args)
+    stage_timings["draft"] = round(time.time() - t0, 1)
+
     if args.dry_run:
-        print("  Dry run — skipping produce + upload")
+        if not quiet:
+            print("  Dry run — skipping produce")
         return
 
     class ProduceArgs:
         draft = str(draft_path)
-        lang = args.lang
         script = None
         force = False
         voice = getattr(args, "voice", None)
 
+    t0 = time.time()
     video_path = cmd_produce(ProduceArgs())
+    stage_timings["produce"] = round(time.time() - t0, 1)
 
-    class UploadArgs:
-        draft = str(draft_path)
-        lang = args.lang
-        force = False
+    import json
+    draft_data = json.loads(Path(str(draft_path)).read_text())
 
-    url = cmd_upload(UploadArgs())
-    print(f"\n  Done! {url}")
+    if fmt == "json":
+        result = {
+            "status": "success",
+            "video_id": draft_data.get("job_id", ""),
+            "topic": getattr(args, "news", ""),
+            "video_path": str(video_path),
+            "duration": stage_timings.get("produce", 0),
+            "stages": {k: {"status": "done", "duration": v} for k, v in stage_timings.items()},
+        }
+        print(_json.dumps(result, ensure_ascii=False, indent=2))
+    elif not quiet:
+        print(f"\n  Done! Video: {video_path}")
 
 
 def cmd_topics(args):
@@ -263,6 +242,12 @@ def cmd_topics(args):
         print(f"  {i:2d}. [{topic.source}] {topic.title}{score}")
         if topic.summary:
             print(f"      {topic.summary[:100]}")
+
+
+def cmd_api(args):
+    """Start the FastAPI dev server."""
+    import uvicorn
+    uvicorn.run("verticals.api.main:app", host=args.host, port=args.port, reload=True)
 
 
 def cmd_niches(args):
@@ -285,7 +270,7 @@ def main():
         run_setup()
 
     parser = argparse.ArgumentParser(
-        description="Verticals v3 — AI-Native Vertical Video Engine",
+        description="Verticals v4 — AI-Native Vertical Video Engine",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="Docs: https://github.com/rushindrasinha/verticals\n"
                "Product: https://verticals.gg",
@@ -301,8 +286,8 @@ def main():
     p_draft.add_argument("--news", required=False, help="Topic/news headline")
     p_draft.add_argument("--context", default="", help="Channel context")
     p_draft.add_argument("--niche", default="general", help=niche_help)
-    p_draft.add_argument("--platform", default="shorts", choices=["shorts", "reels", "tiktok", "all"])
-    p_draft.add_argument("--provider", default=None, help="LLM: claude, gemini, openai, ollama")
+    p_draft.add_argument("--platform", default="tiktok", choices=["tiktok", "shorts", "reels"])
+    p_draft.add_argument("--provider", default=None, choices=["gemini", "ollama"], help="LLM provider: gemini, ollama")
     p_draft.add_argument("--discover", action="store_true", help="Use topic engine")
     p_draft.add_argument("--auto-pick", action="store_true", help="Let LLM pick the best topic")
     p_draft.add_argument("--dry-run", action="store_true", help="Draft only")
@@ -310,29 +295,23 @@ def main():
     # produce
     p_produce = sub.add_parser("produce", help="Generate video from draft")
     p_produce.add_argument("--draft", required=True)
-    p_produce.add_argument("--lang", default="en", choices=["en", "hi", "es", "pt", "de", "fr", "ja", "ko"])
     p_produce.add_argument("--voice", default=None, help="TTS: edge, elevenlabs, say")
     p_produce.add_argument("--script", default=None, help="Override script text")
     p_produce.add_argument("--force", action="store_true", help="Redo all stages")
 
-    # upload
-    p_upload = sub.add_parser("upload", help="Upload to YouTube")
-    p_upload.add_argument("--draft", required=True)
-    p_upload.add_argument("--lang", default="en", choices=["en", "hi", "es", "pt", "de", "fr", "ja", "ko"])
-    p_upload.add_argument("--force", action="store_true", help="Re-upload even if done")
-
     # run (full pipeline)
-    p_run = sub.add_parser("run", help="Full pipeline: draft -> produce -> upload")
+    p_run = sub.add_parser("run", help="Full pipeline: draft -> produce")
     p_run.add_argument("--news", required=False, help="Topic/news headline")
     p_run.add_argument("--niche", default="general", help=niche_help)
-    p_run.add_argument("--platform", default="shorts", choices=["shorts", "reels", "tiktok", "all"])
-    p_run.add_argument("--provider", default=None, help="LLM: claude, gemini, openai, ollama")
+    p_run.add_argument("--platform", default="tiktok", choices=["tiktok", "shorts", "reels"])
+    p_run.add_argument("--provider", default=None, choices=["gemini", "ollama"], help="LLM provider: gemini, ollama")
     p_run.add_argument("--voice", default=None, help="TTS: edge, elevenlabs, say")
-    p_run.add_argument("--lang", default="en", choices=["en", "hi", "es", "pt", "de", "fr", "ja", "ko"])
     p_run.add_argument("--dry-run", action="store_true")
     p_run.add_argument("--context", default="")
-    p_run.add_argument("--discover", action="store_true")
-    p_run.add_argument("--auto-pick", action="store_true")
+    p_run.add_argument("--discover", action="store_true", help="Auto-discover trending topics")
+    p_run.add_argument("--auto-pick", action="store_true", help="Let LLM pick best topic")
+    p_run.add_argument("--format", default="text", choices=["text", "json"], help="Output format")
+    p_run.add_argument("--quiet", "-q", action="store_true", help="No interactive prompts")
 
     # topics
     p_topics = sub.add_parser("topics", help="Discover trending topics")
@@ -341,6 +320,11 @@ def main():
 
     # niches
     sub.add_parser("niches", help="List available niche profiles")
+
+    # api
+    p_api = sub.add_parser("api", help="Start the FastAPI dev server")
+    p_api.add_argument("--port", type=int, default=8000, help="Port (default 8000)")
+    p_api.add_argument("--host", default="127.0.0.1", help="Host (default 127.0.0.1)")
 
     args = parser.parse_args()
 
@@ -356,19 +340,30 @@ def main():
         cmd_niches(args)
         return
 
+    # Handle api command
+    if args.cmd == "api":
+        cmd_api(args)
+        return
+
     # Handle --discover flag for draft/run
+    quiet = getattr(args, "quiet", False)
     if args.cmd in ("draft", "run") and getattr(args, "discover", False):
         from .topics import TopicEngine
         niche = getattr(args, "niche", "general") or "general"
         engine = TopicEngine(niche=niche)
         candidates = engine.discover(limit=15)
         if not candidates:
-            print("  No trending topics found. Use --news instead.")
+            if not quiet:
+                print("  No trending topics found. Use --news instead.")
             sys.exit(1)
 
         if getattr(args, "auto_pick", False):
             args.news = engine.auto_pick(candidates)
-            print(f"  Auto-picked: {args.news}")
+            if not quiet:
+                print(f"  Auto-picked: {args.news}")
+        elif quiet:
+            # In quiet mode without auto-pick, use first topic
+            args.news = candidates[0].title
         else:
             print("\n  Trending topics:\n")
             for i, t in enumerate(candidates, 1):
@@ -386,8 +381,6 @@ def main():
         cmd_draft(args)
     elif args.cmd == "produce":
         cmd_produce(args)
-    elif args.cmd == "upload":
-        cmd_upload(args)
     elif args.cmd == "run":
         cmd_run(args)
     elif args.cmd == "topics":

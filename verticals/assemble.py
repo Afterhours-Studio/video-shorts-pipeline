@@ -22,7 +22,7 @@ def assemble_video(
     voiceover: Path,
     out_dir: Path,
     job_id: str,
-    lang: str = "en",
+    lang: str = "vi",
     ass_path: str | None = None,
     music_path: str | None = None,
     duck_filter: str | None = None,
@@ -40,28 +40,31 @@ def assemble_video(
         animate_frame(frame, anim, per_frame + 0.1, effects[i % len(effects)])
         animated.append(anim)
 
-    # Concat animated segments (escape single quotes for ffmpeg concat demuxer)
+    # Concat animated segments (escape paths for ffmpeg concat demuxer)
     concat_file = out_dir / "concat.txt"
     def _esc(p):
-        return str(p).replace("'", "'\\''" )
+        # Convert backslashes to forward slashes (Windows compat) and escape single quotes
+        return str(p).replace("\\", "/").replace("'", "'\\''" )
     concat_file.write_text("\n".join(f"file '{_esc(p)}'" for p in animated))
 
     merged_video = out_dir / "merged_video.mp4"
     run_cmd([
         "ffmpeg", "-f", "concat", "-safe", "0", "-i", str(concat_file),
         "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
-        str(merged_video), "-y", "-loglevel", "quiet",
+        str(merged_video), "-y", "-loglevel", "warning",
     ])
 
     # Build the final ffmpeg command with optional captions + music
-    out_path = MEDIA_DIR / f"verticals_{job_id}_{lang}.mp4"
+    out_path = MEDIA_DIR / f"verticals_{job_id}.mp4"
 
     # Determine video filter (captions via ASS)
     vf_parts = []
     if ass_path and Path(ass_path).exists():
-        # Escape special chars in path for ffmpeg filter
-        escaped_ass = str(ass_path).replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
-        vf_parts.append(f"ass={escaped_ass}")
+        # Escape path for ffmpeg filter syntax:
+        # Convert backslashes to forward slashes, escape colons,
+        # then wrap in single quotes to protect special chars.
+        escaped_ass = str(ass_path).replace("\\", "/").replace(":", "\\:").replace("'", "'\\''")
+        vf_parts.append(f"ass='{escaped_ass}'")
     vf = ",".join(vf_parts) if vf_parts else None
 
     if music_path and Path(music_path).exists():
@@ -89,7 +92,7 @@ def assemble_video(
             "-map", "0:v", "-map", "[aout]",
             "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest",
-            str(out_path), "-y", "-loglevel", "quiet",
+            str(out_path), "-y", "-loglevel", "warning",
         ]
     else:
         # Two inputs: video + voiceover (no music)
@@ -99,9 +102,10 @@ def assemble_video(
             cmd += ["-vf", vf]
 
         cmd += [
-            "-c:v", "libx264" if vf else "copy",
+            "-map", "0:v", "-map", "1:a",
+            "-c:v", "libx264", "-preset", "fast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest",
-            str(out_path), "-y", "-loglevel", "quiet",
+            str(out_path), "-y", "-loglevel", "warning",
         ]
 
     run_cmd(cmd)

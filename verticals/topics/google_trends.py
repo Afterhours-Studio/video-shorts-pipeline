@@ -8,7 +8,7 @@ class GoogleTrendsSource(TopicSource):
 
     def __init__(self, config: dict = None):
         config = config or {}
-        self.geo = config.get("geo", "IN")
+        self.geo = config.get("geo", "VN")
 
     @property
     def is_available(self) -> bool:
@@ -21,7 +21,7 @@ class GoogleTrendsSource(TopicSource):
     def fetch_topics(self, limit: int = 10) -> list[TopicCandidate]:
         from pytrends.request import TrendReq
 
-        pytrends = TrendReq(hl="en-US", tz=330)  # IST offset
+        pytrends = TrendReq(hl="vi", tz=420)
         trending = pytrends.trending_searches(pn=self._geo_to_pn())
 
         topics = []
@@ -40,9 +40,10 @@ class GoogleTrendsSource(TopicSource):
     def _geo_to_pn(self) -> str:
         """Convert geo code to pytrends pn parameter."""
         geo_map = {
+            "VN": "vietnam",
             "IN": "india",
             "US": "united_states",
             "GB": "united_kingdom",
             "AU": "australia",
         }
-        return geo_map.get(self.geo, "india")
+        return geo_map.get(self.geo, "vietnam")
