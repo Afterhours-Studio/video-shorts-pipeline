@@ -7,6 +7,15 @@ import sys
 from pathlib import Path
 
 # ─────────────────────────────────────────────────────
+# Auto-register bundled ffmpeg/ffprobe into PATH
+# ─────────────────────────────────────────────────────
+try:
+    import static_ffmpeg
+    static_ffmpeg.add_paths()
+except ImportError:
+    pass
+
+# ─────────────────────────────────────────────────────
 # Skill home directory — all data lives here
 # ─────────────────────────────────────────────────────
 SKILL_DIR = Path.home() / ".verticals"
@@ -41,7 +50,7 @@ def write_secret_file(path: Path, content: str):
     """
     path.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         f.write(content)
 
 
@@ -69,7 +78,7 @@ def _get_key(name: str) -> str:
         return val
     if CONFIG_FILE.exists():
         try:
-            cfg = json.loads(CONFIG_FILE.read_text())
+            cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
             val = cfg.get(name)
             if val:
                 return val
@@ -109,10 +118,6 @@ def get_gnews_key() -> str:
     return _get_key("GNEWS_API_KEY")
 
 
-def get_elevenlabs_key() -> str:
-    return _get_key("ELEVENLABS_API_KEY")
-
-
 def get_gemini_key() -> str:
     return _get_key("GEMINI_API_KEY")
 
@@ -121,7 +126,7 @@ def load_config() -> dict:
     """Load the full config.json, including topic_sources."""
     if CONFIG_FILE.exists():
         try:
-            return json.loads(CONFIG_FILE.read_text())
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         except Exception:
             pass
     return {}
@@ -130,7 +135,7 @@ def load_config() -> dict:
 def save_config(config: dict):
     """Save config.json with restricted permissions."""
     SKILL_DIR.mkdir(parents=True, exist_ok=True)
-    write_secret_file(CONFIG_FILE, json.dumps(config, indent=2))
+    write_secret_file(CONFIG_FILE, json.dumps(config, indent=2, ensure_ascii=False))
 
 
 # ─────────────────────────────────────────────────────
@@ -153,12 +158,6 @@ def run_setup():
     key = input("   GEMINI_API_KEY: ").strip()
     if key:
         config["GEMINI_API_KEY"] = key
-
-    print("\n2. ElevenLabs API key (optional — for TTS voice generation)")
-    print("   https://elevenlabs.io/settings/api-keys")
-    key = input("   ELEVENLABS_API_KEY (press Enter to skip): ").strip()
-    if key:
-        config["ELEVENLABS_API_KEY"] = key
 
     save_config(config)
     print(f"\n  Config saved to {CONFIG_FILE}")

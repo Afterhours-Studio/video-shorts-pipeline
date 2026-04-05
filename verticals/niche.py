@@ -174,10 +174,9 @@ def get_voice_config(profile: dict, provider: str = "edge_tts", lang: str = "vi"
     if isinstance(provider_voices, dict):
         # Always look up "vi" first, then fall back to any available voice
         config["voice_id"] = provider_voices.get("vi", provider_voices.get("en", ""))
-        # ElevenLabs specific settings
-        if provider == "elevenlabs":
+        # VieNeu specific: voice_id is a flat key
+        if provider == "vieneu":
             config["voice_id"] = provider_voices.get("voice_id", "")
-            config["settings"] = provider_voices.get("settings", {})
     elif isinstance(provider_voices, str):
         config["voice_id"] = provider_voices
 

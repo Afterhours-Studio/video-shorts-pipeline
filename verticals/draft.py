@@ -21,6 +21,7 @@ def generate_draft(
     platform: str = "tiktok",
     provider: str | None = None,
     lang: str = "vi",
+    target_duration: int = 60,
 ) -> dict:
     """Research topic + generate niche-aware draft via LLM.
 
@@ -40,11 +41,13 @@ def generate_draft(
     # Research
     research = research_topic(news)
 
-    # Platform config
+    # Platform config — adjust word count based on target duration
+    # Vietnamese speech rate: ~150 words per 60 seconds
     platform_key = platform if platform != "all" else "tiktok"
     platform_cfg = PLATFORM_CONFIGS.get(platform_key, PLATFORM_CONFIGS["tiktok"])
-    max_words = platform_cfg["max_script_words"]
+    max_words = int(target_duration * 2.5)  # ~150 words/min for Vietnamese
     platform_label = platform_cfg["label"]
+    duration_label = f"{target_duration // 60}:{target_duration % 60:02d}"
 
     # Build visual guidance for b-roll prompts
     visual_guidance = ""
@@ -83,7 +86,10 @@ def generate_draft(
     # Hardcoded to Vietnamese for v4
     lang_full = "Vietnamese"
 
-    prompt = f"""You are writing a {platform_label} script in {lang_full} ({max_words} words max, ~60-90 seconds spoken).{channel_note}
+    # Scale b-roll frames based on duration (3 per minute)
+    num_broll = max(3, int(target_duration / 20))
+
+    prompt = f"""You are writing a {platform_label} script in {lang_full} ({max_words} words max, ~{duration_label} minutes spoken).{channel_note}
 
 {script_context}
 
@@ -109,7 +115,7 @@ RULES:
 Output JSON exactly:
 {{
   "script": "...",
-  "broll_prompts": ["prompt for frame 1", "prompt for frame 2", "prompt for frame 3"],
+  "broll_prompts": [{', '.join(f'"prompt for frame {i+1}"' for i in range(num_broll))}],
   "title": "...",
   "description": "...",
   "hashtags": "tag1,tag2,tag3",
@@ -192,11 +198,20 @@ Output JSON exactly:
             if not isinstance(locals().get('draft'), dict):
                 draft = {}
             if not draft.get("script"):
-                draft["script"] = raw[:500]
+                # Try to extract script value from JSON-like raw output
+                script_match = re.search(r'"script"\s*:\s*"(.*?)"\s*[,}\]]', raw, re.DOTALL)
+                if script_match:
+                    draft["script"] = script_match.group(1).replace('\\"', '"').replace('\\n', '\n')
+                else:
+                    # Strip JSON artifacts so subtitles don't show field names
+                    cleaned = re.sub(r'[{}\[\]]', '', raw[:500])
+                    cleaned = re.sub(r'"?(script|broll_prompts|title|description|hashtags|caption|thumbnail_prompt)"?\s*:', '', cleaned)
+                    cleaned = cleaned.replace('"', '').strip()
+                    draft["script"] = cleaned
             if not draft.get("title"):
                 draft["title"] = news
             if not draft.get("broll_prompts"):
-                draft["broll_prompts"] = ["Cinematic tech landscape"] * 3
+                draft["broll_prompts"] = ["Cinematic tech landscape"] * num_broll
 
     # Validate and sanitize LLM output fields
     expected_str_fields = [
@@ -209,9 +224,9 @@ Output JSON exactly:
             draft[field] = str(draft[field])
     if "broll_prompts" in draft:
         if not isinstance(draft["broll_prompts"], list):
-            draft["broll_prompts"] = ["Cinematic landscape"] * 3
+            draft["broll_prompts"] = ["Cinematic landscape"] * num_broll
         else:
-            draft["broll_prompts"] = [str(p) for p in draft["broll_prompts"][:3]]
+            draft["broll_prompts"] = [str(p) for p in draft["broll_prompts"][:num_broll]]
 
     # Append visual prompt suffix to b-roll prompts
     suffix = get_visual_prompt_suffix(profile)

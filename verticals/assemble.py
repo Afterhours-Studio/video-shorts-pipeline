@@ -9,12 +9,26 @@ from .log import log
 
 def get_audio_duration(path: Path) -> float:
     """Get duration of an audio file in seconds."""
-    r = run_cmd(
-        ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
-         "-of", "csv=p=0", str(path)],
-        capture=True,
+    import shutil
+    if shutil.which("ffprobe"):
+        r = run_cmd(
+            ["ffprobe", "-v", "quiet", "-show_entries", "format=duration",
+             "-of", "csv=p=0", str(path)],
+            capture=True,
+        )
+        return float(r.stdout.strip())
+    # Fallback: use ffmpeg -i (writes info to stderr)
+    import subprocess
+    r = subprocess.run(
+        ["ffmpeg", "-i", str(path), "-f", "null", "-"],
+        capture_output=True, text=True,
     )
-    return float(r.stdout.strip())
+    import re
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)", r.stderr)
+    if m:
+        h, mi, s, cs = int(m.group(1)), int(m.group(2)), int(m.group(3)), int(m.group(4))
+        return h * 3600 + mi * 60 + s + cs / 100
+    raise RuntimeError(f"Could not determine duration of {path}")
 
 
 def assemble_video(

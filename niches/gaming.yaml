@@ -80,12 +80,8 @@ voice:
       vi: "vi-VN-NamMinhNeural"
       en: "en-US-ChristopherNeural"
       hi: "hi-IN-MadhurNeural"
-    elevenlabs:
-      voice_id: "JBFqnCBsd6RMkjVDRZzb"
-      settings:
-        stability: 0.35
-        similarity_boost: 0.80
-        style: 0.45
+    vieneu:
+      voice_id: "nam-minh"
 
 captions:
   highlight_color: "#FFD700"

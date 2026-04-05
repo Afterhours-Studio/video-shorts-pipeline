@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react'
-import { useRunPipeline, usePipelineStatus } from '../api/pipeline'
+import { useRunPipeline, useRetryPipeline, usePipelineStatus } from '../api/pipeline'
 import { usePipelineWebSocket } from '../lib/websocket'
 import api from '../lib/api'
 import {
@@ -24,9 +24,10 @@ import {
   Music2,
   Clapperboard,
   ImageIcon,
+  RotateCcw,
 } from 'lucide-react'
 
-const NICHES = ['tech', 'gaming', 'finance', 'entertainment', 'sports', 'science', 'general']
+const NICHES = ['tech', 'gaming', 'finance', 'movies', 'sports', 'science', 'music', 'health', 'general']
 
 const STAGES = [
   { key: 'research', label: 'Nghiên cứu', icon: Search },
@@ -43,9 +44,11 @@ const nicheConfig: Record<string, { emoji: string; color: string; activeColor: s
   tech: { emoji: '💻', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
   gaming: { emoji: '🎮', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
   finance: { emoji: '💰', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
-  entertainment: { emoji: '🎬', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
+  movies: { emoji: '🎬', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
   sports: { emoji: '⚽', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
   science: { emoji: '🔬', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
+  music: { emoji: '🎵', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
+  health: { emoji: '🏥', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
   general: { emoji: '📱', color: 'border-zinc-800 text-zinc-500', activeColor: 'border-orange-500/50 bg-orange-500/10 text-orange-400' },
 }
 
@@ -84,13 +87,14 @@ function formatElapsed(seconds: number) {
 export default function Pipeline() {
   const [topic, setTopic] = useState('')
   const [niche, setNiche] = useState('tech')
-  const [provider, setProvider] = useState<'gemini' | 'ollama'>('gemini')
+  const [targetDuration, setTargetDuration] = useState(60)
   const [videoId, setVideoId] = useState<string | null>(null)
   const [discoveredTopics, setDiscoveredTopics] = useState<DiscoveredTopic[]>([])
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [pipelineHistory, setPipelineHistory] = useState<any[]>([])
 
   const runPipeline = useRunPipeline()
+  const retryPipeline = useRetryPipeline()
   const { events, reset: resetEvents } = usePipelineWebSocket(videoId)
   const { data: pollingData } = usePipelineStatus(videoId)
 
@@ -112,14 +116,24 @@ export default function Pipeline() {
     const running = events.find((e) => e.event === 'stage_start' && e.stage === stage)
     if (failed) return { status: 'failed' as const, error: failed.error, duration: failed.duration }
     if (done) return { status: 'done' as const, duration: done.duration }
-    if (running) return { status: 'running' as const }
+    if (running) {
+      // If pipeline has failed, mark the running stage as failed (not spinning)
+      if (hasFailed) {
+        const pipelineError = events.find((e) => e.event === 'pipeline_error')
+        return { status: 'failed' as const, error: pipelineError?.error }
+      }
+      return { status: 'running' as const }
+    }
 
     // Fallback: check polling data
     const pollStage = pollingData?.stages?.find((s: any) => s.stage === stage)
     if (pollStage) {
       if (pollStage.status === 'error') return { status: 'failed' as const, error: pollStage.error }
       if (pollStage.status === 'done') return { status: 'done' as const }
-      if (pollStage.status === 'running') return { status: 'running' as const }
+      if (pollStage.status === 'running') {
+        if (hasFailed) return { status: 'failed' as const }
+        return { status: 'running' as const }
+      }
     }
 
     return { status: 'pending' as const }
@@ -158,13 +172,19 @@ export default function Pipeline() {
   const handleRun = async () => {
     if (!topic.trim()) return
     resetEvents()
-    const res = await runPipeline.mutateAsync({ topic, niche, provider })
+    const res = await runPipeline.mutateAsync({ topic, niche, target_duration: targetDuration })
     setVideoId(res.video_id)
   }
 
   const handleCancel = () => {
     setVideoId(null)
     resetEvents()
+  }
+
+  const handleRetry = async (id: string) => {
+    resetEvents()
+    const res = await retryPipeline.mutateAsync(id)
+    setVideoId(res.video_id)
   }
 
   const handleNewPipeline = () => {
@@ -270,7 +290,7 @@ export default function Pipeline() {
             {/* Niche Selector */}
             <div>
               <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest mb-4">Niche nội dung</label>
-              <div className="flex flex-wrap gap-2.5">
+              <div className="grid grid-cols-3 gap-2.5">
                 {NICHES.map((n) => {
                   const cfg = nicheConfig[n]
                   const isActive = niche === n
@@ -290,35 +310,38 @@ export default function Pipeline() {
               </div>
             </div>
 
-            {/* Provider Toggle */}
-            <div className="flex items-center justify-between pt-4 border-t border-zinc-800/40">
-              <div>
-                <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest">AI Engine</label>
-                <p className="text-[10px] text-zinc-600 font-medium mt-1">Lựa chọn mô hình xử lý</p>
+            {/* Duration Slider */}
+            <div className="pt-4 border-t border-zinc-800/40">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-zinc-500 uppercase tracking-widest">Thời lượng video</label>
+                  <p className="text-[10px] text-zinc-600 font-medium mt-1">Thời gian ước tính cho video</p>
+                </div>
+                <span className="text-sm font-extrabold text-orange-500 tabular-nums bg-orange-500/10 px-3 py-1.5 rounded-xl border border-orange-500/20">
+                  {`${Math.floor(targetDuration / 60)}:${(targetDuration % 60).toString().padStart(2, '0')}`}
+                </span>
               </div>
-              <div className="inline-flex rounded-xl border border-zinc-800/50 p-1 bg-zinc-950">
-                <button
-                  onClick={() => setProvider('gemini')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all ${
-                    provider === 'gemini'
-                      ? 'bg-zinc-800 text-orange-500 shadow-xl'
-                      : 'text-zinc-600 hover:text-zinc-400'
-                  }`}
-                >
-                  <Sparkles size={14} />
-                  GEMINI
-                </button>
-                <button
-                  onClick={() => setProvider('ollama')}
-                  className={`flex items-center gap-2 px-5 py-2 rounded-lg text-xs font-bold transition-all ${
-                    provider === 'ollama'
-                      ? 'bg-zinc-800 text-orange-500 shadow-xl'
-                      : 'text-zinc-600 hover:text-zinc-400'
-                  }`}
-                >
-                  <Cpu size={14} />
-                  OLLAMA
-                </button>
+              <input
+                type="range"
+                min={60}
+                max={180}
+                step={30}
+                value={targetDuration}
+                onChange={(e) => setTargetDuration(Number(e.target.value))}
+                className="w-full h-2 rounded-full appearance-none cursor-pointer bg-zinc-800 accent-orange-500 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500 [&::-webkit-slider-thumb]:shadow-[0_0_10px_rgba(249,115,22,0.4)] [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-orange-400 [&::-moz-range-thumb]:w-5 [&::-moz-range-thumb]:h-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:bg-orange-500 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-orange-400"
+              />
+              <div className="flex justify-between mt-2">
+                {[60, 90, 120, 150, 180].map((val) => (
+                  <button
+                    key={val}
+                    onClick={() => setTargetDuration(val)}
+                    className={`text-[10px] font-bold tracking-wider transition-colors ${
+                      targetDuration === val ? 'text-orange-500' : 'text-zinc-600 hover:text-zinc-400'
+                    }`}
+                  >
+                    {`${Math.floor(val / 60)}:${(val % 60).toString().padStart(2, '0')}`}
+                  </button>
+                ))}
               </div>
             </div>
 
@@ -554,6 +577,16 @@ export default function Pipeline() {
                 <span className="text-[10px] font-bold text-zinc-600 tabular-nums uppercase tracking-widest">
                   {new Date(v.created_at).toLocaleDateString('vi-VN')}
                 </span>
+                {v.status === 'failed' && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); handleRetry(v.id) }}
+                    disabled={retryPipeline.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold uppercase tracking-widest bg-orange-500/10 text-orange-400 border border-orange-500/20 hover:bg-orange-500/20 transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw size={12} />
+                    Chạy lại
+                  </button>
+                )}
               </div>
             ))}
           </div>

@@ -30,12 +30,19 @@ def _whisper_word_timestamps(audio_path: Path, lang: str = "en") -> list[dict]:
         return []
 
     log("Running Whisper for word-level timestamps...")
-    model = whisper.load_model("base")
-    result = model.transcribe(
-        str(audio_path),
-        language=lang[:2],
-        word_timestamps=True,
-    )
+    try:
+        model = whisper.load_model("base")
+        result = model.transcribe(
+            str(audio_path),
+            language=lang[:2],
+            word_timestamps=True,
+        )
+    except FileNotFoundError:
+        log("Whisper failed: ffmpeg not found — install ffmpeg and restart the server")
+        return []
+    except Exception as e:
+        log(f"Whisper transcription failed: {e}")
+        return []
 
     words = []
     for segment in result.get("segments", []):
@@ -200,6 +207,132 @@ def _srt_time(seconds: float) -> str:
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
 
+def _align_script_to_timestamps(script: str, whisper_words: list[dict]) -> list[dict]:
+    """Replace Whisper's garbled text with the original script words.
+
+    Whisper timestamps are generally accurate even when the transcribed text
+    is wrong (especially for Vietnamese). This function maps script words
+    to Whisper's timing, preserving accurate timestamps with correct text.
+    """
+    import re
+    # Split script into words (handle Vietnamese punctuation attached to words)
+    script_tokens = re.findall(r'\S+', script)
+
+    if not script_tokens or not whisper_words:
+        return whisper_words
+
+    aligned = []
+    n_whisper = len(whisper_words)
+    n_script = len(script_tokens)
+
+    if n_script <= n_whisper:
+        # More whisper words than script words — distribute timestamps evenly
+        ratio = n_whisper / n_script
+        for i, token in enumerate(script_tokens):
+            wi = min(int(i * ratio), n_whisper - 1)
+            wi_end = min(int((i + 1) * ratio) - 1, n_whisper - 1)
+            aligned.append({
+                "word": token,
+                "start": whisper_words[wi]["start"],
+                "end": whisper_words[wi_end]["end"],
+            })
+    else:
+        # More script words than whisper words — interpolate timestamps
+        if n_whisper == 0:
+            return whisper_words
+        total_start = whisper_words[0]["start"]
+        total_end = whisper_words[-1]["end"]
+        total_dur = total_end - total_start
+        per_word = total_dur / n_script if n_script > 0 else 0
+        for i, token in enumerate(script_tokens):
+            aligned.append({
+                "word": token,
+                "start": round(total_start + i * per_word, 3),
+                "end": round(total_start + (i + 1) * per_word, 3),
+            })
+
+    return aligned
+
+
+def _parse_edge_tts_metadata(metadata_path: Path, script: str = "") -> list[dict]:
+    """Parse edge-tts metadata into word timestamps.
+
+    Edge TTS v7+ emits SentenceBoundary (not WordBoundary). We split the
+    sentence text into words and distribute timing evenly across them.
+    If a script is provided, we use it instead of the metadata text.
+    """
+    import json as _json
+    import re
+
+    sentences = []
+    for line in metadata_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        meta = _json.loads(line)
+        if meta.get("type") == "SentenceBoundary":
+            sentences.append({
+                "text": meta["text"],
+                "start": meta["offset"] / 10_000_000,
+                "duration": meta["duration"] / 10_000_000,
+            })
+        elif meta.get("type") == "WordBoundary":
+            # Edge TTS v6 format — use directly if available
+            return _parse_word_boundaries(metadata_path)
+
+    if not sentences:
+        return []
+
+    # Use the original script if provided (correct text)
+    if script:
+        all_words = re.findall(r'\S+', script)
+    else:
+        all_words = []
+        for s in sentences:
+            all_words.extend(re.findall(r'\S+', s["text"]))
+
+    # Distribute word timings across sentences proportionally
+    words = []
+    word_idx = 0
+    for sent in sentences:
+        sent_words = re.findall(r'\S+', sent["text"])
+        n = len(sent_words)
+        if n == 0:
+            continue
+        per_word = sent["duration"] / n
+        for i in range(n):
+            # Use script word if available, otherwise sentence word
+            w = all_words[word_idx] if word_idx < len(all_words) else sent_words[i]
+            words.append({
+                "word": w,
+                "start": round(sent["start"] + i * per_word, 3),
+                "end": round(sent["start"] + (i + 1) * per_word, 3),
+            })
+            word_idx += 1
+
+    return words
+
+
+def _parse_word_boundaries(metadata_path: Path) -> list[dict]:
+    """Parse edge-tts v6 WordBoundary events (legacy format)."""
+    import json as _json
+    words = []
+    for line in metadata_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        meta = _json.loads(line)
+        if meta.get("type") == "WordBoundary":
+            offset_sec = meta["offset"] / 10_000_000
+            duration_sec = meta["duration"] / 10_000_000
+            words.append({
+                "word": meta["text"],
+                "start": round(offset_sec, 3),
+                "end": round(offset_sec + duration_sec, 3),
+            })
+    return words
+
+
 def generate_captions(
     audio_path: Path,
     work_dir: Path,
@@ -207,17 +340,28 @@ def generate_captions(
     highlight_color: str = "#FFFF00",
     words_per_group: int = 4,
     split_mode: str = "smart",
+    script: str = "",
 ) -> dict:
     """Generate captions: ASS (for burn-in) + SRT (for YouTube upload).
 
-    Args:
-        split_mode: "smart" splits by punctuation (natural sentences),
-                    "fixed" splits every N words.
-        words_per_group: Max words per subtitle group (used by both modes).
+    Uses Edge TTS word timestamps when available (perfect sync),
+    falls back to Whisper transcription otherwise.
 
     Returns dict with keys: srt_path, ass_path, words (for music ducking).
     """
-    words = _whisper_word_timestamps(audio_path, lang)
+    # Priority 1: Edge TTS metadata (word timestamps from TTS engine)
+    metadata_path = audio_path.with_suffix(".metadata.json")
+    if metadata_path.exists():
+        log("Using Edge TTS metadata for subtitle timing...")
+        words = _parse_edge_tts_metadata(metadata_path, script=script)
+        log(f"Got {len(words)} word timestamps from Edge TTS metadata.")
+    else:
+        # Priority 2: Whisper transcription (fallback for VieNeu or other TTS)
+        words = _whisper_word_timestamps(audio_path, lang)
+        # Replace Whisper's garbled text with original script (keeps timestamps)
+        if script and words:
+            log("Aligning original script to Whisper timestamps...")
+            words = _align_script_to_timestamps(script, words)
 
     result = {"words": words}
 

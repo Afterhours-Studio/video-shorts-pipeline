@@ -62,7 +62,7 @@ def cmd_produce(args):
     import shutil
 
     draft_path = Path(args.draft)
-    draft = json.loads(draft_path.read_text())
+    draft = json.loads(draft_path.read_text(encoding="utf-8"))
     job_id = draft["job_id"]
     lang = "vi"
     state = PipelineState(draft)
@@ -209,7 +209,7 @@ def cmd_run(args):
     stage_timings["produce"] = round(time.time() - t0, 1)
 
     import json
-    draft_data = json.loads(Path(str(draft_path)).read_text())
+    draft_data = json.loads(Path(str(draft_path)).read_text(encoding="utf-8"))
 
     if fmt == "json":
         result = {
@@ -247,7 +247,32 @@ def cmd_topics(args):
 def cmd_api(args):
     """Start the FastAPI dev server."""
     import uvicorn
-    uvicorn.run("verticals.api.main:app", host=args.host, port=args.port, reload=True)
+
+    use_reload = getattr(args, "reload", False)
+
+    # uvicorn reload is broken on Windows + Python 3.14 (WatchFiles reloader
+    # spawns a child process that never binds to the port).  Warn if the user
+    # explicitly asked for it on an affected platform.
+    if use_reload and sys.platform == "win32":
+        import platform
+        py_minor = sys.version_info[:2]
+        if py_minor >= (3, 14):
+            print(
+                "  WARNING: --reload is unreliable on Windows with Python "
+                f"{platform.python_version()}.\n"
+                "  The server may start but not respond to requests.\n"
+                "  If that happens, restart without --reload.\n"
+            )
+
+    kwargs = dict(
+        host=args.host,
+        port=args.port,
+    )
+    if use_reload:
+        kwargs["reload"] = True
+        kwargs["reload_dirs"] = ["verticals"]
+
+    uvicorn.run("verticals.api.main:app", **kwargs)
 
 
 def cmd_niches(args):
@@ -295,7 +320,7 @@ def main():
     # produce
     p_produce = sub.add_parser("produce", help="Generate video from draft")
     p_produce.add_argument("--draft", required=True)
-    p_produce.add_argument("--voice", default=None, help="TTS: edge, elevenlabs, say")
+    p_produce.add_argument("--voice", default=None, help="TTS: edge, vieneu, say")
     p_produce.add_argument("--script", default=None, help="Override script text")
     p_produce.add_argument("--force", action="store_true", help="Redo all stages")
 
@@ -305,7 +330,7 @@ def main():
     p_run.add_argument("--niche", default="general", help=niche_help)
     p_run.add_argument("--platform", default="tiktok", choices=["tiktok", "shorts", "reels"])
     p_run.add_argument("--provider", default=None, choices=["gemini", "ollama"], help="LLM provider: gemini, ollama")
-    p_run.add_argument("--voice", default=None, help="TTS: edge, elevenlabs, say")
+    p_run.add_argument("--voice", default=None, help="TTS: edge, vieneu, say")
     p_run.add_argument("--dry-run", action="store_true")
     p_run.add_argument("--context", default="")
     p_run.add_argument("--discover", action="store_true", help="Auto-discover trending topics")
@@ -325,6 +350,7 @@ def main():
     p_api = sub.add_parser("api", help="Start the FastAPI dev server")
     p_api.add_argument("--port", type=int, default=8000, help="Port (default 8000)")
     p_api.add_argument("--host", default="127.0.0.1", help="Host (default 127.0.0.1)")
+    p_api.add_argument("--reload", action="store_true", help="Enable auto-reload (may not work on Windows + Python 3.14)")
 
     args = parser.parse_args()
 

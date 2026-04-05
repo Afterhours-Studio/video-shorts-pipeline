@@ -1,0 +1,159 @@
+name: music
+display_name: "Music & Artists"
+description: "For channels covering music news, trending songs, artist stories, album reviews, and music culture."
+
+# ─────────────────────────────────────────────────────
+# Script Intelligence
+# ─────────────────────────────────────────────────────
+script:
+  tone: "passionate, energetic, opinionated, deeply personal but always backed by context"
+  pacing: "fast and rhythmic, mirrors the energy of music itself, never monotone"
+  perspective: "first person, talking directly to viewer as a fellow music lover"
+  word_count: "150 to 170"
+  sentence_style: "short rhythmic sentences, occasional longer lyrical ones for emphasis, never more than two clauses, use repetition for impact"
+
+  hooks:
+    - id: trending_song
+      template: "This song has {number} streams in {timeframe}. Here's why it's everywhere."
+      when: "a track is charting or going viral, first week of breakout"
+    - id: artist_story
+      template: "The story behind {artist} is insane. Nobody talks about this part."
+      when: "artist with a compelling origin story or dramatic life event"
+    - id: hot_take
+      template: "Everyone loves {album}. I think it's the worst thing {artist} has ever made."
+      when: "popular release with strong consensus, use to create debate"
+    - id: music_debate
+      template: "{artist_a} vs {artist_b}. This debate ends today."
+      when: "two artists frequently compared by fans"
+    - id: hidden_gem
+      template: "This song has {low_number} views. It deserves millions. Listen."
+      when: "underrated or underground track deserving exposure"
+    - id: breakdown
+      template: "Let me break down why {song} works in 60 seconds. It's genius."
+      when: "song with interesting production, lyrics, or musical theory elements"
+    - id: comeback
+      template: "{artist} disappeared for {years}. Now they're back and everything is different."
+      when: "artist returning after hiatus or career shift"
+    - id: industry_exposed
+      template: "The music industry doesn't want you to know this about {topic}."
+      when: "industry practices, label deals, streaming economics"
+
+  cta_variants:
+    - "Follow for daily music takes."
+    - "Subscribe if you actually listen to music, not just hear it."
+    - "Drop your hot take in the comments. I want to argue."
+    - "Full breakdown and playlist link in the pinned comment."
+
+  forbidden_phrases:
+    - "like and subscribe"
+    - "smash that bell"
+    - "what's up guys"
+    - "without further ado"
+    - "in this video"
+    - "hey everyone"
+    - "let me know in the comments"
+
+  structure:
+    opening: "Hook in first 3 seconds. No intro, no greeting, drop a bold claim or a shocking stat that demands attention."
+    middle: "3 to 4 key points — weave together chart data, artist backstory, and musical analysis. Transition with 'but here's where it gets wild' or 'and nobody is talking about this part'."
+    closing: "End with a definitive take or a bold prediction about the artist or genre. Then CTA. Never fade out — end on a high note."
+
+# ─────────────────────────────────────────────────────
+# Visual Intelligence
+# ─────────────────────────────────────────────────────
+visuals:
+  style: "vibrant neon, concert-like atmosphere, high contrast with glowing accents"
+  mood: "electric, euphoric, nightlife energy, pulsing with rhythm"
+  color_palette: ["#0A0010", "#1A0030", "#FF00FF", "#00DDFF", "#FFD700"]
+
+  subjects:
+    prefer:
+      - "neon-lit microphone on a dark stage with purple haze"
+      - "close up of headphones with colorful light reflections"
+      - "concert crowd silhouette with dramatic stage lighting and smoke"
+      - "vinyl record spinning with neon light trails"
+      - "equalizer bars glowing in magenta and cyan on a dark background"
+      - "studio mixing console with colorful LED indicators in low light"
+      - "artist silhouette against massive LED wall with abstract visuals"
+    avoid:
+      - "stock photo of person casually listening with earbuds smiling"
+      - "generic music notes clipart or cartoon instruments"
+      - "bright daylight flat-lit performance"
+      - "empty karaoke room"
+      - "people dancing at a generic party"
+
+  prompt_suffix: "photorealistic, neon lighting, vibrant colors, concert atmosphere, lens flare, 8K detail, shallow depth of field"
+
+# ─────────────────────────────────────────────────────
+# Voice Intelligence
+# ─────────────────────────────────────────────────────
+voice:
+  pace: "fast, approximately 165 words per minute, slows down when quoting lyrics or building emotional moments"
+  energy: "high energy and expressive, shifts between hype and reflective depending on the story"
+  style: "think Anthony Fantano meets a late-night radio DJ"
+
+  suggested_voices:
+    edge_tts:
+      vi: "vi-VN-NamMinhNeural"
+      en: "en-US-GuyNeural"
+      hi: "hi-IN-MadhurNeural"
+    vieneu:
+      voice_id: "nam-minh"
+
+# ─────────────────────────────────────────────────────
+# Caption Intelligence
+# ─────────────────────────────────────────────────────
+captions:
+  highlight_color: "#FF00FF"
+  text_color: "#FFFFFF"
+  font_family: "Arial"
+  font_size: 72
+  font_weight: "bold"
+  position: "lower_third"
+  background: "semi_transparent_dark"
+  words_per_group: 4
+
+# ─────────────────────────────────────────────────────
+# Music Intelligence
+# ─────────────────────────────────────────────────────
+music:
+  mood: "upbeat electronic, rhythmic energy, no lyrics, groovy basslines that stay behind the voice"
+  energy: "high"
+  tags: ["electronic", "upbeat", "lofi", "hiphop", "groovy"]
+  duck_volume_speech: 0.10
+  duck_volume_gap: 0.20
+
+# ─────────────────────────────────────────────────────
+# Thumbnail Intelligence
+# ─────────────────────────────────────────────────────
+thumbnail:
+  style: "dark background with vibrant neon accents, bold text, one dominant visual element"
+  text_color: "#FFFFFF"
+  accent_color: "#FF00FF"
+  text_position: "left_aligned"
+  max_words: 5
+  font_style: "bold condensed sans serif"
+  guidelines:
+    - "Never put more than 5 words on a thumbnail"
+    - "Text should be readable at 120px wide (mobile browse size)"
+    - "Use a single striking artist image or album art element, never cluttered collages"
+    - "Neon magenta or cyan accents on dark backgrounds outperform other styles in music niche"
+    - "Artist faces with strong emotion or mid-performance shots outperform static poses"
+
+# ─────────────────────────────────────────────────────
+# Topic Discovery
+# ─────────────────────────────────────────────────────
+discovery:
+  reddit:
+    subreddits: ["Music", "hiphopheads", "popheads", "kpop", "LetsTalkMusic", "indieheads"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/giai-tri.rss"
+      - "https://zing.vn/rss/nhac.rss"
+      - "https://kenh14.vn/rss/star.rss"
+      - "https://pitchfork.com/feed/feed-news/rss"
+      - "https://www.nme.com/feed"
+      - "https://consequence.net/feed/"
+  google_trends:
+    category: "e"
+    geo: "VN"

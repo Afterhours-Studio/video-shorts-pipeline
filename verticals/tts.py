@@ -1,16 +1,14 @@
-"""Multi-provider TTS — Edge TTS (free default), ElevenLabs (premium), macOS say (fallback).
+"""Multi-provider TTS — Edge TTS, VieNeu (local Vietnamese), macOS say.
 
 Edge TTS is the recommended default: free, cross-platform, 300+ voices, no API key.
-ElevenLabs is premium: most natural, requires API key.
+VieNeu-TTS: free, offline, Vietnamese-native, voice cloning, runs on CPU.
 macOS say is the last-resort fallback.
 """
 
 import os
 from pathlib import Path
 
-import requests
-
-from .config import get_elevenlabs_key, run_cmd
+from .config import run_cmd
 from .log import log
 from .retry import with_retry
 
@@ -24,10 +22,12 @@ EDGE_VOICE_DEFAULT = "vi-VN-NamMinhNeural"
 
 
 async def _edge_tts_generate(text: str, voice: str, output_path: Path):
-    """Generate audio via edge-tts (async)."""
+    """Generate audio via edge-tts (async), with word-level metadata."""
     import edge_tts
     communicate = edge_tts.Communicate(text, voice)
-    await communicate.save(str(output_path))
+    # Save metadata sidecar with word timestamps (offset/duration per word)
+    metadata_path = output_path.with_suffix(".metadata.json")
+    await communicate.save(str(output_path), str(metadata_path))
 
 
 def _generate_edge_tts(script: str, out_dir: Path, voice_override: str = "") -> Path:
@@ -40,20 +40,13 @@ def _generate_edge_tts(script: str, out_dir: Path, voice_override: str = "") -> 
     log(f"Generating vi voiceover via Edge TTS (voice: {voice})...")
 
     try:
-        # Handle event loop — works whether called from sync or async context
+        # Always create a fresh event loop in a new thread to avoid
+        # deadlocks with FastAPI's running loop
+        loop = asyncio.new_event_loop()
         try:
-            loop = asyncio.get_running_loop()
-            # Already in an async context, create a new thread
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor() as pool:
-                future = pool.submit(
-                    asyncio.run,
-                    _edge_tts_generate(script, voice, out_path)
-                )
-                future.result(timeout=60)
-        except RuntimeError:
-            # No running loop, safe to use asyncio.run
-            asyncio.run(_edge_tts_generate(script, voice, out_path))
+            loop.run_until_complete(_edge_tts_generate(script, voice, out_path))
+        finally:
+            loop.close()
 
         log(f"Edge TTS voiceover saved: {out_path.name}")
         return out_path
@@ -62,52 +55,59 @@ def _generate_edge_tts(script: str, out_dir: Path, voice_override: str = "") -> 
 
 
 # ─────────────────────────────────────────────────────
-# ElevenLabs — premium, most natural
+# VieNeu-TTS — free, offline, Vietnamese-native
 # ─────────────────────────────────────────────────────
 
-@with_retry(max_retries=3, base_delay=2.0)
-def _call_elevenlabs(script: str, voice_id: str, api_key: str, settings: dict | None = None) -> bytes:
-    """Call ElevenLabs TTS API and return audio bytes."""
-    voice_settings = settings or {
-        "stability": 0.4,
-        "similarity_boost": 0.85,
-        "style": 0.3,
-        "use_speaker_boost": True,
-    }
-    r = requests.post(
-        f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}",
-        headers={"xi-api-key": api_key, "Content-Type": "application/json"},
-        json={
-            "text": script,
-            "model_id": "eleven_multilingual_v2",
-            "voice_settings": voice_settings,
-        },
-        timeout=60,
-    )
-    if r.status_code != 200:
-        raise RuntimeError(f"ElevenLabs {r.status_code}: {r.text[:200]}")
-    return r.content
+# Singleton to avoid reloading model on every call
+_vieneu_instance = None
 
 
-def _generate_elevenlabs(
-    script: str, out_dir: Path,
-    voice_id: str = "", settings: dict | None = None
-) -> Path:
-    """Generate voiceover via ElevenLabs."""
-    api_key = get_elevenlabs_key()
-    if not api_key:
-        raise RuntimeError("ELEVENLABS_API_KEY not set")
+def _get_vieneu():
+    """Get or create VieNeu TTS instance (cached singleton)."""
+    global _vieneu_instance
+    if _vieneu_instance is None:
+        from vieneu import Vieneu
+        log("Loading VieNeu-TTS model (first time may download ~500MB)...")
+        _vieneu_instance = Vieneu()
+        log("VieNeu-TTS model loaded.")
+    return _vieneu_instance
 
-    vid = voice_id
-    if not vid:
-        raise RuntimeError("ElevenLabs voice_id required (no language-based fallback in v4)")
-    out_path = out_dir / "voiceover_vi.mp3"
 
-    log(f"Generating vi voiceover via ElevenLabs (voice: {vid})...")
-    audio_bytes = _call_elevenlabs(script, vid, api_key, settings)
-    out_path.write_bytes(audio_bytes)
-    log(f"ElevenLabs voiceover saved: {out_path.name}")
-    return out_path
+def _generate_vieneu(script: str, out_dir: Path, voice_id: str = "") -> Path:
+    """Generate voiceover via VieNeu-TTS (local Vietnamese TTS)."""
+    tts = _get_vieneu()
+
+    # Resolve voice: explicit arg > config > empty (default)
+    if not voice_id:
+        from .config import load_config
+        voice_id = load_config().get("VIENEU_VOICE_ID", "")
+
+    voice_data = None
+    if voice_id:
+        try:
+            voice_data = tts.get_preset_voice(voice_id)
+            log(f"Generating vi voiceover via VieNeu (voice: {voice_id})...")
+        except Exception:
+            log(f"VieNeu voice '{voice_id}' not found, using default...")
+
+    if voice_data is None:
+        log("Generating vi voiceover via VieNeu (default voice)...")
+
+    audio = tts.infer(text=script, voice=voice_data)
+
+    # VieNeu outputs WAV — convert to MP3 via ffmpeg
+    wav_path = out_dir / "voiceover_vieneu.wav"
+    mp3_path = out_dir / "voiceover_vi.mp3"
+    tts.save(audio, str(wav_path))
+
+    run_cmd([
+        "ffmpeg", "-i", str(wav_path), "-acodec", "libmp3lame",
+        "-q:a", "2", str(mp3_path), "-y", "-loglevel", "quiet",
+    ])
+    wav_path.unlink(missing_ok=True)
+
+    log(f"VieNeu voiceover saved: {mp3_path.name}")
+    return mp3_path
 
 
 # ─────────────────────────────────────────────────────
@@ -134,7 +134,7 @@ def get_tts_provider(name: str | None = None) -> str:
     """Resolve which TTS provider to use.
 
     Priority: explicit name > TTS_PROVIDER env > auto-detect.
-    Auto-detect tries: edge_tts > elevenlabs > say.
+    Auto-detect tries: edge_tts > vieneu > say.
     """
     if name and name != "auto":
         return name.lower()
@@ -155,8 +155,12 @@ def get_tts_provider(name: str | None = None) -> str:
     except ImportError:
         pass
 
-    if get_elevenlabs_key():
-        return "elevenlabs"
+    # VieNeu-TTS (local Vietnamese)
+    try:
+        import vieneu  # noqa: F401
+        return "vieneu"
+    except ImportError:
+        pass
 
     # macOS say as last resort
     import shutil
@@ -166,7 +170,7 @@ def get_tts_provider(name: str | None = None) -> str:
     raise RuntimeError(
         "No TTS provider available. Install one:\n"
         "  pip install edge-tts  (free, recommended)\n"
-        "  Set ELEVENLABS_API_KEY (premium)\n"
+        "  pip install vieneu    (free, offline Vietnamese)\n"
         "  Or use macOS (has built-in 'say')"
     )
 
@@ -184,7 +188,7 @@ def generate_voiceover(
         script: The voiceover text.
         out_dir: Directory to save the audio file.
         lang: Ignored in v4 (always Vietnamese).
-        provider: TTS provider name (edge, elevenlabs, say).
+        provider: TTS provider name (edge, vieneu, say).
         voice_config: Optional voice config from niche profile.
 
     Returns:
@@ -199,25 +203,31 @@ def generate_voiceover(
             return _generate_edge_tts(script, out_dir, voice_override)
         except Exception as e:
             log(f"Edge TTS failed: {e}")
-            # Fall through to next provider
-            if get_elevenlabs_key():
-                log("Falling back to ElevenLabs...")
-                provider = "elevenlabs"
-            else:
-                log("Falling back to macOS say...")
+            # Fall through to VieNeu
+            try:
+                log("Falling back to VieNeu...")
+                return _generate_vieneu(
+                    script, out_dir,
+                    voice_id=voice_config.get("voice_id", ""),
+                )
+            except Exception:
+                log("VieNeu also failed, falling back to macOS say...")
                 return _generate_say(script, out_dir)
 
-    if provider == "elevenlabs":
+    if provider == "vieneu":
         try:
-            return _generate_elevenlabs(
+            return _generate_vieneu(
                 script, out_dir,
                 voice_id=voice_config.get("voice_id", ""),
-                settings=voice_config.get("settings"),
             )
         except Exception as e:
-            log(f"ElevenLabs failed: {e}")
-            log("Falling back to macOS say...")
-            return _generate_say(script, out_dir)
+            log(f"VieNeu failed: {e}")
+            log("Falling back to Edge TTS...")
+            try:
+                return _generate_edge_tts(script, out_dir)
+            except Exception:
+                log("Edge TTS also failed, falling back to macOS say...")
+                return _generate_say(script, out_dir)
 
     if provider == "say":
         return _generate_say(script, out_dir)

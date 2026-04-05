@@ -30,12 +30,19 @@ const WHISPER_MODELS = [
 ]
 
 const TTS_PROVIDERS = [
-  { id: 'edge', label: 'Edge TTS', desc: 'Miễn phí, chất lượng tốt' },
-  { id: 'elevenlabs', label: 'ElevenLabs', desc: 'Premium, tự nhiên nhất' },
+  { id: 'edge', label: 'Edge TTS', desc: 'Miễn phí, không giới hạn — giọng Việt native, khuyên dùng' },
+  { id: 'vieneu', label: 'VieNeu-TTS', desc: 'Miễn phí, chạy offline — AI giọng Việt, hỗ trợ voice cloning' },
+]
+
+const VIENEU_VOICES = [
+  { id: 'Xuân Vĩnh (Nam - Miền Nam)', label: 'Xuân Vĩnh', desc: 'Nam - Miền Nam (mặc định)' },
+  { id: 'Phạm Tuyên (Nam - Miền Bắc)', label: 'Phạm Tuyên', desc: 'Nam - Miền Bắc' },
+  { id: 'Bích Ngọc (Nữ - Miền Bắc)', label: 'Bích Ngọc', desc: 'Nữ - Miền Bắc' },
+  { id: 'Thục Đoan (Nữ - Miền Nam)', label: 'Thục Đoan', desc: 'Nữ - Miền Nam' },
 ]
 
 const LLM_PROVIDERS = [
-  { id: 'gemini', label: 'Gemini Flash 2.5', desc: 'Nhanh, miễn phí tier' },
+  { id: 'gemini', label: 'Gemma 4 31B', desc: 'Mạnh, miễn phí tier' },
   { id: 'ollama', label: 'Ollama (Local)', desc: 'Chạy local, không cần API key' },
 ]
 
@@ -43,7 +50,6 @@ const LLM_PROVIDERS = [
 const EXPECTED_KEYS = [
   { key: 'GEMINI_API_KEY', label: 'Gemini API Key', required: true },
   { key: 'GNEWS_API_KEY', label: 'GNews API Key', required: true },
-  { key: 'ELEVENLABS_API_KEY', label: 'ElevenLabs API Key', required: false },
   { key: 'NEWSAPI_KEY', label: 'NewsAPI Key', required: false },
   { key: 'TIKTOK_CLIENT_KEY', label: 'TikTok Client Key', required: false },
   { key: 'TIKTOK_CLIENT_SECRET', label: 'TikTok Client Secret', required: false },
@@ -296,8 +302,9 @@ export default function Settings() {
               </div>
             </div>
 
-            {/* Voice Selector */}
-            <div>
+            {/* Edge Voice Selector */}
+            {config.TTS_PROVIDER === 'edge' && (
+            <div className="animate-reveal">
               <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 px-1">Vietnamese Edge Voices</label>
               <div className="grid grid-cols-1 gap-3">
                 {EDGE_VOICES.map(({ id, label, desc }) => {
@@ -325,17 +332,40 @@ export default function Settings() {
                 })}
               </div>
             </div>
+            )}
 
-            {/* ElevenLabs Voice ID */}
-            {config.TTS_PROVIDER === 'elevenlabs' && (
+            {/* VieNeu Voice Selector */}
+            {config.TTS_PROVIDER === 'vieneu' && (
               <div className="animate-reveal">
-                <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-2 px-1">ElevenLabs Voice ID</label>
-                <input
-                  value={config.ELEVENLABS_VOICE_ID || ''}
-                  onChange={(e) => update('ELEVENLABS_VOICE_ID', e.target.value)}
-                  placeholder="Enter voice ID from ElevenLabs"
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl px-5 py-3.5 text-sm font-mono text-zinc-200 focus:outline-none focus:ring-2 focus:ring-orange-500/20 focus:border-orange-500/50 transition-all"
-                />
+                <label className="block text-[10px] font-black text-zinc-500 uppercase tracking-widest mb-4 px-1">VieNeu Voices</label>
+                <div className="grid grid-cols-1 gap-3">
+                  {VIENEU_VOICES.map(({ id, label, desc }) => {
+                    const active = config.VIENEU_VOICE_ID === id
+                    return (
+                      <button
+                        key={id}
+                        onClick={() => update('VIENEU_VOICE_ID', id)}
+                        className={`w-full text-left p-5 rounded-2xl border-2 transition-all flex items-center justify-between ${
+                          active
+                            ? 'bg-orange-500/5 border-orange-500'
+                            : 'bg-zinc-950 border-zinc-800 hover:border-zinc-700'
+                        }`}
+                      >
+                        <div className="flex items-center gap-4">
+                          <div className={`w-2 h-2 rounded-full ${active ? 'bg-orange-500 animate-pulse shadow-[0_0_8px_currentColor]' : 'bg-zinc-800'}`} />
+                          <div>
+                            <div className={`text-sm font-black uppercase tracking-tight ${active ? 'text-white' : 'text-zinc-400'}`}>{label}</div>
+                            <div className="text-[11px] font-medium text-zinc-500">{desc}</div>
+                          </div>
+                        </div>
+                        {active && <Check size={16} strokeWidth={3} className="text-orange-500" />}
+                      </button>
+                    )
+                  })}
+                </div>
+                <p className="text-[10px] font-bold text-zinc-600 mt-3 px-1">
+                  Chạy offline, không cần internet. Hỗ trợ voice cloning.
+                </p>
               </div>
             )}
           </div>

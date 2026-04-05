@@ -5,6 +5,7 @@ interface PipelineRunRequest {
   topic: string
   niche?: string
   provider?: string
+  target_duration?: number
 }
 
 interface PipelineRunResponse {
@@ -31,6 +32,13 @@ export function useRunPipeline() {
   return useMutation({
     mutationFn: (data: PipelineRunRequest) =>
       api.post('pipeline/run', { json: data }).json<PipelineRunResponse>(),
+  })
+}
+
+export function useRetryPipeline() {
+  return useMutation({
+    mutationFn: (videoId: string) =>
+      api.post(`pipeline/retry/${videoId}`).json<PipelineRunResponse>(),
   })
 }
 

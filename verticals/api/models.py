@@ -48,6 +48,7 @@ class PipelineRunRequest(BaseModel):
     niche: str = "tech"
     provider: str = "gemini"
     auto_upload: bool = False
+    target_duration: int = 60
 
 
 class PipelineRunResponse(BaseModel):

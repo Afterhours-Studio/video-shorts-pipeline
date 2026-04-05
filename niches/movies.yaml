@@ -1,0 +1,159 @@
+name: movies
+display_name: "Movies & Cinema"
+description: "For channels covering movie reviews, film analysis, box office news, and cinema culture."
+
+# ─────────────────────────────────────────────────────
+# Script Intelligence
+# ─────────────────────────────────────────────────────
+script:
+  tone: "passionate, dramatic, slightly opinionated, storytelling-driven but backed by evidence"
+  pacing: "medium-fast, builds tension like a movie trailer, every sentence earns the next"
+  perspective: "first person, talking directly to viewer as a fellow cinephile"
+  word_count: "150 to 175"
+  sentence_style: "mix of punchy one-liners and vivid descriptive sentences, never more than two clauses, occasional rhetorical questions for drama"
+
+  hooks:
+    - id: hot_take
+      template: "Everyone is praising {movie}. Here's why they're wrong."
+      when: "a film has overwhelmingly positive consensus, use to create debate"
+    - id: breaking_news
+      template: "{studio} just dropped this and the internet is losing it."
+      when: "trailer drop, casting announcement, or surprise release within 48 hours"
+    - id: hidden_detail
+      template: "You watched {movie} and missed this. I guarantee it."
+      when: "film has subtle foreshadowing, easter eggs, or overlooked symbolism"
+    - id: ranking
+      template: "I ranked every {franchise} movie. Number one will surprise you."
+      when: "franchise with three or more entries, strong nostalgia factor"
+    - id: versus
+      template: "{movie_a} vs {movie_b}. One is a masterpiece, the other is a fraud."
+      when: "two comparable films competing for attention or awards"
+    - id: box_office_shock
+      template: "{movie} just made {amount}. That number changes everything."
+      when: "surprising box office result, either massive hit or catastrophic flop"
+    - id: director_spotlight
+      template: "Why {director} is the most important filmmaker alive right now."
+      when: "director releasing new work or reaching a career milestone"
+    - id: retrospective
+      template: "{movie} came out {years} ago. It was ahead of its time. Here's proof."
+      when: "anniversary of a film or reassessment of an older title"
+
+  cta_variants:
+    - "Follow for daily movie breakdowns."
+    - "Subscribe if you actually care about cinema."
+    - "Drop a comment: what's your rating for this one?"
+    - "Full spoiler analysis in the pinned comment."
+
+  forbidden_phrases:
+    - "like and subscribe"
+    - "smash that bell"
+    - "what's up guys"
+    - "without further ado"
+    - "in this video"
+    - "hey everyone"
+    - "let me know in the comments"
+
+  structure:
+    opening: "Hook in first 3 seconds. No intro, no greeting, drop the viewer into a bold claim or shocking detail."
+    middle: "3 to 4 points building a case — use scene references, director choices, and box office data. Transition with 'but here's where it gets interesting' or 'and that's not even the craziest part'."
+    closing: "Land on a definitive opinion or prediction about the film's legacy. Then CTA. Never trail off — end like the final frame of a great movie."
+
+# ─────────────────────────────────────────────────────
+# Visual Intelligence
+# ─────────────────────────────────────────────────────
+visuals:
+  style: "cinematic, dramatic lighting, deep shadows with warm and cool contrast"
+  mood: "theatrical, intense, noir-influenced for thrillers, warm amber for dramas"
+  color_palette: ["#0D0D0D", "#1C1024", "#FF4444", "#FFB347", "#2E1A47"]
+
+  subjects:
+    prefer:
+      - "dramatic spotlight on a single chair in an empty theater"
+      - "film reel unwinding with warm backlight and shallow depth of field"
+      - "silhouette of a person watching a massive cinema screen in the dark"
+      - "close up of a clapperboard with cinematic bokeh background"
+      - "moody red carpet scene with rain and neon reflections"
+      - "vintage projector casting light beams through dust particles"
+      - "dramatic close up of eyes reflecting a movie screen"
+    avoid:
+      - "stock photo of family eating popcorn smiling"
+      - "generic multiplex exterior in daylight"
+      - "cartoon or anime style illustrations"
+      - "bright flat-lit scenes with no atmosphere"
+      - "people posing with movie tickets"
+
+  prompt_suffix: "photorealistic, cinematic lighting, anamorphic lens flare, dramatic shadows, film grain, 8K detail, shallow depth of field"
+
+# ─────────────────────────────────────────────────────
+# Voice Intelligence
+# ─────────────────────────────────────────────────────
+voice:
+  pace: "medium-fast, approximately 155 words per minute, slows down for dramatic reveals"
+  energy: "passionate and expressive, shifts between analytical calm and dramatic intensity"
+  style: "think Chris Stuckmann meets a film noir narrator"
+
+  suggested_voices:
+    edge_tts:
+      vi: "vi-VN-NamMinhNeural"
+      en: "en-US-GuyNeural"
+      hi: "hi-IN-MadhurNeural"
+    vieneu:
+      voice_id: "nam-minh"
+
+# ─────────────────────────────────────────────────────
+# Caption Intelligence
+# ─────────────────────────────────────────────────────
+captions:
+  highlight_color: "#FF4444"
+  text_color: "#FFFFFF"
+  font_family: "Arial"
+  font_size: 72
+  font_weight: "bold"
+  position: "lower_third"
+  background: "semi_transparent_dark"
+  words_per_group: 4
+
+# ─────────────────────────────────────────────────────
+# Music Intelligence
+# ─────────────────────────────────────────────────────
+music:
+  mood: "orchestral undertones, dramatic tension, no lyrics, cinematic swells that stay behind the voice"
+  energy: "medium-high"
+  tags: ["cinematic", "orchestral", "dramatic", "suspense", "epic"]
+  duck_volume_speech: 0.12
+  duck_volume_gap: 0.25
+
+# ─────────────────────────────────────────────────────
+# Thumbnail Intelligence
+# ─────────────────────────────────────────────────────
+thumbnail:
+  style: "dark dramatic background, bold text with red accent, one dominant visual element"
+  text_color: "#FFFFFF"
+  accent_color: "#FF4444"
+  text_position: "left_aligned"
+  max_words: 5
+  font_style: "bold condensed sans serif"
+  guidelines:
+    - "Never put more than 5 words on a thumbnail"
+    - "Text should be readable at 120px wide (mobile browse size)"
+    - "Use a single striking film still or poster element, never cluttered collages"
+    - "Dark backgrounds with red or amber accents outperform light backgrounds in movie niche"
+    - "Faces showing strong emotion outperform generic action shots"
+
+# ─────────────────────────────────────────────────────
+# Topic Discovery
+# ─────────────────────────────────────────────────────
+discovery:
+  reddit:
+    subreddits: ["movies", "MovieDetails", "TrueFilm", "boxoffice", "Letterboxd", "flicks"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/giai-tri.rss"
+      - "https://tuoitre.vn/rss/giai-tri.rss"
+      - "https://kenh14.vn/rss/doi-song-showbiz.rss"
+      - "https://collider.com/feed/"
+      - "https://screenrant.com/feed/"
+      - "https://www.hollywoodreporter.com/feed/"
+  google_trends:
+    category: "e"
+    geo: "VN"

@@ -97,12 +97,8 @@ voice:
       vi: "vi-VN-NamMinhNeural"
       en: "en-US-GuyNeural"
       hi: "hi-IN-MadhurNeural"
-    elevenlabs:
-      voice_id: "JBFqnCBsd6RMkjVDRZzb"
-      settings:
-        stability: 0.4
-        similarity_boost: 0.85
-        style: 0.3
+    vieneu:
+      voice_id: "nam-minh"
 
 # ─────────────────────────────────────────────────────
 # Caption Intelligence

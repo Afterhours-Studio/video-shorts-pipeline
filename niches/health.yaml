@@ -1,0 +1,164 @@
+name: health
+display_name: "Health & Wellness"
+description: "For channels covering health tips, medical news, nutrition science, mental wellness, and evidence-based wellness content."
+
+# ─────────────────────────────────────────────────────
+# Script Intelligence
+# ─────────────────────────────────────────────────────
+script:
+  tone: "informative, caring, trustworthy, evidence-based but never preachy or condescending"
+  pacing: "measured and clear, lets important facts breathe, no rushing through medical terms"
+  perspective: "first person, talking directly to viewer as a knowledgeable friend who reads the research"
+  word_count: "150 to 170"
+  sentence_style: "clear direct sentences, occasional longer one for nuance, never more than two clauses, always cite a source or study when making a claim"
+
+  hooks:
+    - id: myth_buster
+      template: "You've been told {myth} your whole life. The science says otherwise."
+      when: "common health misconception with strong research disproving it"
+    - id: new_study
+      template: "A new study on {topic} just dropped and it changes everything we thought."
+      when: "recent peer-reviewed study with surprising or significant findings"
+    - id: daily_habit
+      template: "You do this every single day and it's quietly destroying your {body_part}."
+      when: "common daily habit with documented negative health effects"
+    - id: food_truth
+      template: "{food} is marketed as healthy. Here's what it actually does to your body."
+      when: "popular food with misleading health claims"
+    - id: comparison
+      template: "{option_a} vs {option_b}. One is helping you, the other is a waste of money."
+      when: "two competing supplements, diets, or health products"
+    - id: doctor_explains
+      template: "Here's what actually happens inside your body when you {action}."
+      when: "biological process that can be explained visually and simply"
+    - id: warning_sign
+      template: "If you notice {symptom}, stop ignoring it. Here's what it means."
+      when: "commonly ignored symptom that may indicate a serious condition"
+    - id: number_shock
+      template: "{statistic}. That number is a public health crisis. Here's why."
+      when: "alarming health statistic from a credible source"
+
+  cta_variants:
+    - "Follow for evidence-based health content daily."
+    - "Subscribe if you want health facts, not health fads."
+    - "Share this with someone who needs to hear it."
+    - "Sources and references in the pinned comment."
+
+  forbidden_phrases:
+    - "like and subscribe"
+    - "smash that bell"
+    - "what's up guys"
+    - "without further ado"
+    - "in this video"
+    - "hey everyone"
+    - "let me know in the comments"
+    - "guaranteed cure"
+    - "doctors hate this"
+    - "miracle"
+    - "one weird trick"
+    - "big pharma doesn't want you to know"
+
+  structure:
+    opening: "Hook in first 3 seconds. No intro, no greeting, lead with a surprising fact or debunked myth that immediately challenges what the viewer believes."
+    middle: "3 to 4 evidence-based points, each citing research or medical consensus. Build from the problem to the explanation to the actionable takeaway. Transition with 'but here's what the research actually shows' or 'and it gets more important than that'."
+    closing: "End with one clear actionable step the viewer can take today. Then CTA. Never end with fear — always land on empowerment."
+
+# ─────────────────────────────────────────────────────
+# Visual Intelligence
+# ─────────────────────────────────────────────────────
+visuals:
+  style: "clean, professional, soft lighting with green and white accents on dark backgrounds"
+  mood: "trustworthy, calm, scientific, approachable yet authoritative"
+  color_palette: ["#0A0F0A", "#1A2E1A", "#00FF88", "#FFFFFF", "#2ECC71"]
+
+  subjects:
+    prefer:
+      - "close up of fresh fruits and vegetables with water droplets on dark surface"
+      - "medical stethoscope on a clean dark background with soft green light"
+      - "abstract DNA helix with glowing green nodes on dark background"
+      - "person running at sunrise with silhouette and warm backlight"
+      - "clean laboratory equipment with soft focused bokeh"
+      - "anatomical illustration with subtle neon highlighting on dark background"
+      - "calm meditation scene with soft natural lighting and bokeh"
+    avoid:
+      - "stock photo of doctor smiling with crossed arms"
+      - "generic pill bottles or supplement piles"
+      - "graphic surgery or injury images"
+      - "before and after weight loss collages"
+      - "clickbait style shocked face pointing at body part"
+
+  prompt_suffix: "photorealistic, clean lighting, medical professional aesthetic, soft green accents, 8K detail, shallow depth of field"
+
+# ─────────────────────────────────────────────────────
+# Voice Intelligence
+# ─────────────────────────────────────────────────────
+voice:
+  pace: "steady, approximately 150 words per minute, slows down for critical medical information"
+  energy: "warm and confident, authoritative but never clinical or cold, reassuring on sensitive topics"
+  style: "think Dr. Mike meets a calm science documentary narrator"
+
+  suggested_voices:
+    edge_tts:
+      vi: "vi-VN-NamMinhNeural"
+      en: "en-US-GuyNeural"
+      hi: "hi-IN-MadhurNeural"
+    vieneu:
+      voice_id: "nam-minh"
+
+# ─────────────────────────────────────────────────────
+# Caption Intelligence
+# ─────────────────────────────────────────────────────
+captions:
+  highlight_color: "#00FF88"
+  text_color: "#FFFFFF"
+  font_family: "Arial"
+  font_size: 72
+  font_weight: "bold"
+  position: "lower_third"
+  background: "semi_transparent_dark"
+  words_per_group: 4
+
+# ─────────────────────────────────────────────────────
+# Music Intelligence
+# ─────────────────────────────────────────────────────
+music:
+  mood: "calm ambient, reassuring pads, no lyrics, clean and uncluttered soundscape"
+  energy: "low-medium"
+  tags: ["ambient", "calm", "wellness", "nature", "soft"]
+  duck_volume_speech: 0.10
+  duck_volume_gap: 0.20
+
+# ─────────────────────────────────────────────────────
+# Thumbnail Intelligence
+# ─────────────────────────────────────────────────────
+thumbnail:
+  style: "dark clean background, bold text with green accent, one dominant visual element"
+  text_color: "#FFFFFF"
+  accent_color: "#00FF88"
+  text_position: "left_aligned"
+  max_words: 5
+  font_style: "bold condensed sans serif"
+  guidelines:
+    - "Never put more than 5 words on a thumbnail"
+    - "Text should be readable at 120px wide (mobile browse size)"
+    - "Use a single clean image — food, body part, or simple medical icon, never cluttered"
+    - "Green accents on dark backgrounds signal trust and health in this niche"
+    - "Avoid clickbait shock imagery — clean authority outperforms sensationalism for health content"
+
+# ─────────────────────────────────────────────────────
+# Topic Discovery
+# ─────────────────────────────────────────────────────
+discovery:
+  reddit:
+    subreddits: ["health", "nutrition", "science", "Fitness", "HealthyFood", "mentalhealth"]
+  rss:
+    feeds:
+      - "https://vnexpress.net/rss/suc-khoe.rss"
+      - "https://tuoitre.vn/rss/suc-khoe.rss"
+      - "https://thanhnien.vn/rss/suc-khoe.rss"
+      - "https://www.medicalnewstoday.com/newsfeeds/rss"
+      - "https://www.webmd.com/rss/default.rss"
+      - "https://www.health.harvard.edu/blog/feed"
+  google_trends:
+    category: "m"
+    geo: "VN"

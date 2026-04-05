@@ -86,7 +86,7 @@ def _call_gemini(prompt: str, max_tokens: int) -> str:
 
     url = (
         "https://generativelanguage.googleapis.com/v1beta"
-        "/models/gemini-2.5-flash:generateContent"
+        "/models/gemma-4-31b-it:generateContent"
     )
     body = {
         "contents": [{"parts": [{"text": prompt}]}],

@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
 interface VideoPlayerModalProps {
@@ -38,7 +39,7 @@ export default function VideoPlayerModal({ isOpen, onClose, videoId, title }: Vi
 
   if (!isOpen || !videoId) return null
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
       {/* Backdrop */}
       <div
@@ -47,17 +48,17 @@ export default function VideoPlayerModal({ isOpen, onClose, videoId, title }: Vi
       />
 
       {/* Modal */}
-      <div className="relative flex flex-col items-center animate-reveal max-h-[90vh]">
-        {/* Close button */}
-        <button
-          onClick={onClose}
-          className="absolute -top-2 -right-2 z-10 w-10 h-10 rounded-full bg-zinc-900 border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-orange-500/50 transition-all flex items-center justify-center shadow-2xl"
-        >
-          <X size={18} />
-        </button>
-
+      <div className="relative z-10 flex flex-col items-center max-h-full animate-reveal">
         {/* Video container — 9:16 portrait */}
-        <div className="relative rounded-3xl overflow-hidden border border-zinc-700/30 shadow-2xl shadow-black/50 bg-black" style={{ maxHeight: '85vh', aspectRatio: '9/16' }}>
+        <div className="relative rounded-3xl overflow-hidden border border-zinc-700/30 shadow-2xl shadow-black/50 bg-black" style={{ height: 'min(80vh, 720px)', aspectRatio: '9/16' }}>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            className="absolute top-3 right-3 z-10 w-10 h-10 rounded-full bg-zinc-900/80 backdrop-blur-sm border border-zinc-700/50 text-zinc-400 hover:text-white hover:border-orange-500/50 transition-all flex items-center justify-center shadow-2xl"
+          >
+            <X size={18} />
+          </button>
+
           <video
             ref={videoRef}
             src={`/api/videos/${videoId}/file`}
@@ -75,6 +76,7 @@ export default function VideoPlayerModal({ isOpen, onClose, videoId, title }: Vi
           </p>
         )}
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

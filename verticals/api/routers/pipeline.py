@@ -69,8 +69,24 @@ def _run_stage_sync(fn, *args, **kwargs):
         return future.result()
 
 
-async def _run_real_pipeline(video_id: str, request: PipelineRunRequest):
-    """Execute the real production pipeline with WebSocket progress updates."""
+def _find_resume_stage(state) -> str | None:
+    """Find the first stage that hasn't completed successfully."""
+    for stage in PIPELINE_STAGES:
+        if not state.is_done(stage):
+            return stage
+    return None
+
+
+async def _run_real_pipeline(
+    video_id: str,
+    request: PipelineRunRequest,
+    resume_from: str | None = None,
+):
+    """Execute the real production pipeline with WebSocket progress updates.
+
+    If resume_from is set, skip all stages before it and reload their artifacts
+    from the saved PipelineState.
+    """
     from verticals.config import DRAFTS_DIR, MEDIA_DIR
     from verticals.draft import generate_draft
     from verticals.broll import generate_broll
@@ -84,51 +100,72 @@ async def _run_real_pipeline(video_id: str, request: PipelineRunRequest):
 
     start_time = time.monotonic()
     lang = "vi"
+    resuming = resume_from is not None
+    skip_stages = set()
+    if resume_from:
+        # Research and draft are a combined unit — if draft failed, re-run both
+        effective_resume = "research" if resume_from == "draft" else resume_from
+        idx = PIPELINE_STAGES.index(effective_resume)
+        skip_stages = set(PIPELINE_STAGES[:idx])
 
     try:
-        # ── Research + Draft ──────────────────────────────
-        await _record_stage_start(video_id, "research")
-        await _record_stage_start(video_id, "draft")
-        t0 = time.monotonic()
-
-        draft = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_draft(
-                request.topic, "",
-                niche=request.niche,
-                platform="tiktok",
-                provider=request.provider or "gemini",
-                lang=lang,
-            ),
-        )
-        draft["job_id"] = video_id
-
         DRAFTS_DIR.mkdir(parents=True, exist_ok=True)
         draft_path = DRAFTS_DIR / f"{video_id}.json"
-        state = PipelineState(draft)
-        state.complete_stage("research")
-        state.complete_stage("draft")
-        state.save(draft_path)
 
-        draft_dur = round(time.monotonic() - t0, 2)
-        await _record_stage_done(video_id, "research", draft_dur)
-        await _record_stage_done(video_id, "draft", draft_dur)
+        # ── Load existing state if resuming ───────────────
+        if resuming and draft_path.exists():
+            draft = json.loads(draft_path.read_text(encoding="utf-8"))
+            state = PipelineState(draft)
+        else:
+            draft = None
+            state = None
 
-        # Update DB with draft metadata
-        async with get_db() as db:
-            await db.execute(
-                "UPDATE videos SET title = ?, caption = ?, hashtags = ?, "
-                "script = ?, broll_prompts = ?, draft_path = ? WHERE id = ?",
-                [
-                    draft.get("title"), draft.get("caption"), draft.get("hashtags"),
-                    draft.get("script"), json.dumps(draft.get("broll_prompts", [])),
-                    str(draft_path), video_id,
-                ],
+        # ── Research + Draft ──────────────────────────────
+        if "research" not in skip_stages:
+            await _record_stage_start(video_id, "research")
+            await _record_stage_start(video_id, "draft")
+            t0 = time.monotonic()
+
+            target_duration = request.target_duration
+            from verticals.config import load_config as _load_cfg
+            _llm_provider = request.provider or _load_cfg().get("LLM_PROVIDER", "gemini")
+            draft = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: generate_draft(
+                    request.topic, "",
+                    niche=request.niche,
+                    platform="tiktok",
+                    provider=_llm_provider,
+                    lang=lang,
+                    target_duration=target_duration,
+                ),
             )
-            await db.commit()
+            draft["job_id"] = video_id
 
-        if await _is_cancelled(video_id):
-            return
+            state = PipelineState(draft)
+            state.complete_stage("research")
+            state.complete_stage("draft")
+            state.save(draft_path)
+
+            draft_dur = round(time.monotonic() - t0, 2)
+            await _record_stage_done(video_id, "research", draft_dur)
+            await _record_stage_done(video_id, "draft", draft_dur)
+
+            # Update DB with draft metadata
+            async with get_db() as db:
+                await db.execute(
+                    "UPDATE videos SET title = ?, caption = ?, hashtags = ?, "
+                    "script = ?, broll_prompts = ?, draft_path = ? WHERE id = ?",
+                    [
+                        draft.get("title"), draft.get("caption"), draft.get("hashtags"),
+                        draft.get("script"), json.dumps(draft.get("broll_prompts", [])),
+                        str(draft_path), video_id,
+                    ],
+                )
+                await db.commit()
+
+            if await _is_cancelled(video_id):
+                return
 
         # Load niche profile
         profile = load_niche(request.niche)
@@ -139,122 +176,159 @@ async def _run_real_pipeline(video_id: str, request: PipelineRunRequest):
         script = draft.get("script", "")
 
         # ── B-roll ────────────────────────────────────────
-        await _record_stage_start(video_id, "broll")
-        t0 = time.monotonic()
+        if "broll" not in skip_stages:
+            await _record_stage_start(video_id, "broll")
+            t0 = time.monotonic()
 
-        frames = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_broll(draft.get("broll_prompts", ["Cinematic landscape"] * 3), work_dir),
-        )
-        state.complete_stage("broll", {"frames": [str(f) for f in frames]})
-        state.save(draft_path)
+            frames = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: generate_broll(draft.get("broll_prompts", ["Cinematic landscape"] * max(3, target_duration // 20)), work_dir),
+            )
+            state.complete_stage("broll", {"frames": [str(f) for f in frames]})
+            state.save(draft_path)
 
-        await _record_stage_done(video_id, "broll", round(time.monotonic() - t0, 2))
-        if await _is_cancelled(video_id):
-            return
+            await _record_stage_done(video_id, "broll", round(time.monotonic() - t0, 2))
+            if await _is_cancelled(video_id):
+                return
+        else:
+            frames = [Path(p) for p in state.get_artifact("broll", "frames", [])]
 
         # ── Voiceover ─────────────────────────────────────
-        await _record_stage_start(video_id, "voiceover")
-        t0 = time.monotonic()
+        if "voiceover" not in skip_stages:
+            await _record_stage_start(video_id, "voiceover")
+            t0 = time.monotonic()
 
-        voice_config = get_voice_config(profile, provider="edge_tts")
-        vo_path = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_voiceover(script, work_dir, voice_config=voice_config),
-        )
-        state.complete_stage("voiceover", {"path": str(vo_path)})
-        state.save(draft_path)
+            from verticals.config import load_config as _load_cfg
+            _tts_cfg = _load_cfg()
+            tts_provider = _tts_cfg.get("TTS_PROVIDER", "edge")
+            voice_config = get_voice_config(profile, provider="edge_tts" if tts_provider == "edge" else tts_provider)
+            vo_path = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: generate_voiceover(script, work_dir, provider=tts_provider, voice_config=voice_config),
+            )
+            state.complete_stage("voiceover", {"path": str(vo_path)})
+            state.save(draft_path)
 
-        await _record_stage_done(video_id, "voiceover", round(time.monotonic() - t0, 2))
-        if await _is_cancelled(video_id):
-            return
+            await _record_stage_done(video_id, "voiceover", round(time.monotonic() - t0, 2))
+            if await _is_cancelled(video_id):
+                return
+        else:
+            vo_path = Path(state.get_artifact("voiceover", "path", ""))
 
         # ── Captions ──────────────────────────────────────
-        await _record_stage_start(video_id, "captions")
-        t0 = time.monotonic()
+        if "captions" not in skip_stages:
+            await _record_stage_start(video_id, "captions")
+            t0 = time.monotonic()
 
-        caption_config = get_caption_config(profile)
-        from verticals.config import load_config as _load_cfg
-        _cfg = _load_cfg()
-        captions_result = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: generate_captions(
-                vo_path, work_dir, lang,
-                highlight_color=caption_config.get("highlight_color", "#FFFF00"),
-                words_per_group=int(_cfg.get("CAPTION_MAX_WORDS", caption_config.get("words_per_group", 8))),
-                split_mode=_cfg.get("CAPTION_SPLIT_MODE", "smart"),
-            ),
-        )
-        state.complete_stage("captions", {
-            "srt_path": str(captions_result.get("srt_path", "")),
-            "ass_path": str(captions_result.get("ass_path", "")),
-        })
-        state.save(draft_path)
+            caption_config = get_caption_config(profile)
+            from verticals.config import load_config as _load_cfg
+            _cfg = _load_cfg()
+            captions_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: generate_captions(
+                    vo_path, work_dir, lang,
+                    highlight_color=caption_config.get("highlight_color", "#FFFF00"),
+                    words_per_group=int(_cfg.get("CAPTION_MAX_WORDS", caption_config.get("words_per_group", 8))),
+                    split_mode=_cfg.get("CAPTION_SPLIT_MODE", "smart"),
+                    script=script,
+                ),
+            )
+            state.complete_stage("captions", {
+                "srt_path": str(captions_result.get("srt_path", "")),
+                "ass_path": str(captions_result.get("ass_path", "")),
+                "words": captions_result.get("words", []),
+            })
+            state.save(draft_path)
 
-        await _record_stage_done(video_id, "captions", round(time.monotonic() - t0, 2))
-        if await _is_cancelled(video_id):
-            return
+            await _record_stage_done(video_id, "captions", round(time.monotonic() - t0, 2))
+            if await _is_cancelled(video_id):
+                return
+        else:
+            captions_result = {
+                "srt_path": state.get_artifact("captions", "srt_path", ""),
+                "ass_path": state.get_artifact("captions", "ass_path", ""),
+                "words": state.get_artifact("captions", "words", []),
+            }
 
         # ── Music ─────────────────────────────────────────
-        await _record_stage_start(video_id, "music")
-        t0 = time.monotonic()
+        if "music" not in skip_stages:
+            await _record_stage_start(video_id, "music")
+            t0 = time.monotonic()
 
-        music_config = get_music_config(profile)
-        music_result = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: select_and_prepare_music(
-                vo_path, work_dir,
-                duck_speech=music_config.get("duck_volume_speech", 0.12),
-                duck_gap=music_config.get("duck_volume_gap", 0.25),
-            ),
-        )
-        state.complete_stage("music", {
-            "track_path": str(music_result.get("track_path", "")),
-            "duck_filter": music_result.get("duck_filter", ""),
-        })
-        state.save(draft_path)
+            music_config = get_music_config(profile)
+            cached_words = captions_result.get("words")
+            music_result = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: select_and_prepare_music(
+                    vo_path, work_dir,
+                    duck_speech=music_config.get("duck_volume_speech", 0.12),
+                    duck_gap=music_config.get("duck_volume_gap", 0.25),
+                    cached_words=cached_words,
+                ),
+            )
+            state.complete_stage("music", {
+                "track_path": str(music_result.get("track_path", "")),
+                "duck_filter": music_result.get("duck_filter", ""),
+            })
+            state.save(draft_path)
 
-        await _record_stage_done(video_id, "music", round(time.monotonic() - t0, 2))
-        if await _is_cancelled(video_id):
-            return
+            await _record_stage_done(video_id, "music", round(time.monotonic() - t0, 2))
+            if await _is_cancelled(video_id):
+                return
+        else:
+            music_result = {
+                "track_path": state.get_artifact("music", "track_path", ""),
+                "duck_filter": state.get_artifact("music", "duck_filter", ""),
+            }
 
         # ── Assemble ──────────────────────────────────────
-        await _record_stage_start(video_id, "assemble")
-        t0 = time.monotonic()
+        if "assemble" not in skip_stages:
+            await _record_stage_start(video_id, "assemble")
+            t0 = time.monotonic()
 
-        video_path = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: assemble_video(
-                frames=frames,
-                voiceover=vo_path,
-                out_dir=work_dir,
-                job_id=video_id,
-                ass_path=captions_result.get("ass_path"),
-                music_path=music_result.get("track_path"),
-                duck_filter=music_result.get("duck_filter"),
-            ),
-        )
-        state.complete_stage("assemble", {"video_path": str(video_path)})
-        state.save(draft_path)
+            video_path = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: assemble_video(
+                    frames=frames,
+                    voiceover=vo_path,
+                    out_dir=work_dir,
+                    job_id=video_id,
+                    ass_path=captions_result.get("ass_path"),
+                    music_path=music_result.get("track_path"),
+                    duck_filter=music_result.get("duck_filter"),
+                ),
+            )
+            state.complete_stage("assemble", {"video_path": str(video_path)})
+            state.save(draft_path)
 
-        await _record_stage_done(video_id, "assemble", round(time.monotonic() - t0, 2))
-        if await _is_cancelled(video_id):
-            return
+            await _record_stage_done(video_id, "assemble", round(time.monotonic() - t0, 2))
+            if await _is_cancelled(video_id):
+                return
+        else:
+            video_path = Path(state.get_artifact("assemble", "video_path", ""))
 
         # ── Thumbnail ─────────────────────────────────────
-        await _record_stage_start(video_id, "thumbnail")
-        t0 = time.monotonic()
+        if "thumbnail" not in skip_stages:
+            await _record_stage_start(video_id, "thumbnail")
+            t0 = time.monotonic()
 
-        thumb_path = None
-        try:
-            thumb_path = await asyncio.get_event_loop().run_in_executor(
-                None,
-                lambda: generate_thumbnail(draft, work_dir),
-            )
-        except Exception as e:
-            log.warning("Thumbnail generation failed: %s", e)
+            thumb_path = None
+            try:
+                thumb_path = await asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda: generate_thumbnail(draft, work_dir),
+                )
+                state.complete_stage("thumbnail", {"path": str(thumb_path)})
+                state.save(draft_path)
+            except Exception as e:
+                log.warning("Thumbnail generation failed: %s", e)
 
-        await _record_stage_done(video_id, "thumbnail", round(time.monotonic() - t0, 2))
+            await _record_stage_done(video_id, "thumbnail", round(time.monotonic() - t0, 2))
+        else:
+            thumb_path = None
+            tp = state.get_artifact("thumbnail", "path", "")
+            if tp:
+                thumb_path = Path(tp)
 
         # ── Finalize: update DB with all outputs ──────────
         duration = None
@@ -382,3 +456,60 @@ async def cancel_pipeline(video_id: str):
     })
 
     return {"video_id": video_id, "status": "failed", "message": "Pipeline cancelled"}
+
+
+@router.post("/retry/{video_id}", response_model=PipelineRunResponse)
+async def retry_pipeline(video_id: str):
+    """Retry a failed pipeline from the first incomplete stage."""
+    from verticals.state import PipelineState
+
+    async with get_db() as db:
+        rows = await db.execute_fetchall(
+            "SELECT id, topic, niche, status, draft_path FROM videos WHERE id = ?",
+            [video_id],
+        )
+        if not rows:
+            raise HTTPException(status_code=404, detail="Video not found")
+
+        video = rows[0]
+        if video["status"] != "failed":
+            raise HTTPException(status_code=400, detail="Only failed pipelines can be retried")
+
+        draft_path = video["draft_path"]
+        if not draft_path or not Path(draft_path).exists():
+            raise HTTPException(
+                status_code=400,
+                detail="No saved state found — please start a new pipeline",
+            )
+
+        # Load state and find resume point
+        draft = json.loads(Path(draft_path).read_text(encoding="utf-8"))
+        state = PipelineState(draft)
+        resume_from = _find_resume_stage(state)
+
+        if resume_from is None:
+            raise HTTPException(status_code=400, detail="All stages already completed")
+
+        # Clean up incomplete pipeline_runs rows
+        await db.execute(
+            "DELETE FROM pipeline_runs WHERE video_id = ? AND status != 'done'",
+            [video_id],
+        )
+        await db.execute(
+            "UPDATE videos SET status = 'producing' WHERE id = ?", [video_id],
+        )
+        await db.commit()
+
+    # Build a request object from the existing video data
+    request = PipelineRunRequest(
+        topic=video["topic"],
+        niche=video["niche"] or "general",
+    )
+
+    asyncio.create_task(_run_real_pipeline(video_id, request, resume_from=resume_from))
+
+    return PipelineRunResponse(
+        video_id=video_id,
+        status="producing",
+        message=f"Retrying from stage: {resume_from}",
+    )
